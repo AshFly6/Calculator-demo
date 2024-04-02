@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">计算器（Demo）</string>
+    <string name="cannot_divide_by_zero">不能除以0</string>
+</resources>

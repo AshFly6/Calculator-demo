@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <color name="background_expressions">#E0E3EF</color>
+    <color name="background_operators">#C5CAE9</color>
+    <color name="background_digits">#E8EAF6</color>
+    <color name="background_special">#E1BEE7</color>
+</resources>
