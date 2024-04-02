@@ -29,7 +29,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     private RecyclerView rv_digits;
     private int columns;
     private int perLength;
-    private ExpressionBuilder expressionBuilder = new ExpressionBuilder();
+    private final ExpressionBuilder expressionBuilder = new ExpressionBuilder();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -135,6 +135,8 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
 
     private void appendBracket() {
         char bracket = expressionBuilder.appendBracket();
+        if (bracket == EMPTY_CHAR)
+            return;
         tv_expressions.append("" + bracket);
         scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
     }
