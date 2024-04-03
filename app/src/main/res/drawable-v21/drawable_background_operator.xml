@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <item android:drawable="@drawable/drawable_background_pressed" android:state_pressed="true" />
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+        android:color="@color/background_ripple">
 
     <item>
 
@@ -11,4 +10,4 @@
 
     </item>
 
-</selector>
+</ripple>

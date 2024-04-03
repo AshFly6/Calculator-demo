@@ -170,7 +170,7 @@ public class ExpressionBuilder {
                 break;
             }
             list.remove(i);
-            if (i > 1)
+            if (i > 0)
                 operators.remove(i - 1);
             size--;
         }
@@ -188,7 +188,7 @@ public class ExpressionBuilder {
         while (true) {
             //进入了一对括号
             scopeStart = list.lastIndexOf("(") + 1;
-            hasLeftBracket = scopeStart != 0;
+            hasLeftBracket = scopeStart > 0;
 
             scopeEnd = indexOfRange(list, ")", scopeStart) - 1;
             hasRightBracket = scopeEnd > 0;
@@ -343,8 +343,7 @@ public class ExpressionBuilder {
         for (int i = length - 1; i >= 0; i--) {
             char lastChar = builder.charAt(i);
             if (SINGLE_CHARS.contains(lastChar) || DIGIT_CHARS.contains(lastChar)) {
-                createNewBuilder(EMPTY_CHAR);
-                builder = tryGetCurrentBuilder();
+                builder = createNewBuilder(EMPTY_CHAR);
                 builder.append(c);
                 return true;
             }

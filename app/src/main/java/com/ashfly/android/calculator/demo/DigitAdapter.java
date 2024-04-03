@@ -140,6 +140,7 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
                 view.setPadding(margins, margins, margins, margins);
                 background = R.drawable.drawable_background_special;
             }
+
             view.setBackground(ContextCompat.getDrawable(context, background));
 
             GridLayoutManager.LayoutParams params = new GridLayoutManager.LayoutParams(size, size);
