@@ -4,7 +4,6 @@ import static com.ashfly.android.calculator.demo.ExpressionBuilder.*;
 import static com.ashfly.android.calculator.demo.DigitAdapter.*;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.util.Pair;
 import androidx.recyclerview.widget.*;
 
 import android.graphics.*;
@@ -23,13 +22,25 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     private final DecimalFormat resultFormat = new DecimalFormat("###,###.############");
     private final DecimalFormat expressionFormat = new DecimalFormat("###,###");
 
+    private final ExpressionBuilder expressionBuilder = new ExpressionBuilder();
+    private final List<Item> normalItems = Arrays.asList(
+            new Item(R.drawable.ic_expand_more), new Item(R.drawable.ic_backspace), new Item("%"), new Item("÷"),
+            new Item('7'), new Item('8'), new Item('9'), new Item("×"),
+            new Item('4'), new Item('5'), new Item('6'), new Item("-"),
+            new Item('3'), new Item('2'), new Item('1'), new Item("+"),
+            new Item('0'), new Item('.'), new Item("( )"), new Item("=")
+    );
     private LinearLayout layout;
-    private TextView tv_expressions, tv_result;
     private HorizontalScrollView scroll_expressions, scroll_result;
+    private TextView tv_expressions, tv_result;
     private RecyclerView rv_digits;
+    private List<Item> advancedItems;
+    private boolean isRad, isFinalResult;
+    private DigitAdapter adapter;
+
     private int columns;
     private int perLength;
-    private final ExpressionBuilder expressionBuilder = new ExpressionBuilder();
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,6 +76,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         scroll_expressions.setMinimumHeight(tvHeight);
         tv_result.setTextSize(TypedValue.COMPLEX_UNIT_PX, tvHeight / 2.5f);
         tv_result.setTextColor(Color.GRAY);
+
     }
 
     private void initViews() {
@@ -78,20 +90,15 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     }
 
     private void initDigits() {
+        tv_result.setText("0");
+
         rv_digits.setLayoutManager(new GridLayoutManager(this, columns));
 
-        final List<Item> items = Arrays.asList(
-                new Item(R.drawable.ic_arrow_down), new Item(R.drawable.ic_backspace), new Item("%"), new Item("÷"),
-                new Item('7'), new Item('8'), new Item('9'), new Item("×"),
-                new Item('4'), new Item('5'), new Item('6'), new Item("-"),
-                new Item('3'), new Item('2'), new Item('1'), new Item("+"),
-                new Item('0'), new Item('.'), new Item("( )"), new Item("=")
-        );
-        DigitAdapter adapter = new DigitAdapter(perLength, items);
+        adapter = new DigitAdapter(perLength, normalItems);
         adapter.setOnItemClickListener(this);
         rv_digits.setAdapter(adapter);
 
-        resultFormat.setMaximumIntegerDigits(12);
+        resultFormat.setMaximumFractionDigits(12);
         resultFormat.setRoundingMode(RoundingMode.DOWN);
     }
 
@@ -99,14 +106,24 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         int viewType = item.viewType;
         switch (viewType) {
             case VIEW_TYPE_DIGIT:
-                appendDigit(item);
-                performCalculate();
+                if (!isFinalResult) {
+                    appendDigit(item);
+                    performCalculate();
+                }
                 break;
 
             case VIEW_TYPE_OPERATOR:
                 String operator = item.operator;
+                if ("AC".equals(operator)) {
+                    performAllClear();
+                    break;
+                }
+
+                if (isFinalResult)
+                    return;
+
                 if ("=".equals(operator)) {
-                    performCalculate();
+                    performEqualSign();
                     break;
                 }
 
@@ -120,9 +137,43 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             case VIEW_TYPE_SPECIAL:
                 if (item.resourceId == R.drawable.ic_backspace) {
                     performBackspace();
+                } else if (item.resourceId == R.drawable.ic_expand_more) {
+                    performSwitchAdvancedPanel(true);
+                } else if (item.resourceId == R.drawable.ic_expand_less) {
+                    performSwitchAdvancedPanel(false);
                 }
+                break;
+
 
         }
+    }
+
+    private void performEqualSign() {
+        isFinalResult = true;
+        expressionBuilder.clear();
+        tv_expressions.setText(tv_result.getText(), TextView.BufferType.EDITABLE);
+        tv_result.setText("");
+    }
+
+    private void performAllClear() {
+        expressionBuilder.clear();
+        tv_expressions.setText("", TextView.BufferType.EDITABLE);
+        tv_result.setText("0");
+        isFinalResult = false;
+    }
+
+    private void performSwitchAdvancedPanel(boolean open) {
+        if (!open) {
+            adapter.setItems(normalItems);
+            return;
+        }
+        if (advancedItems == null) {
+            advancedItems = Arrays.asList(new Item(R.drawable.ic_expand_less), new Item(R.drawable.ic_backspace), new Item("AC"), new Item(),
+                    new Item("DEG"), new Item((CharSequence) "sin"), new Item((CharSequence) "cos"), new Item((CharSequence) "tan"),
+                    new Item("INV"), new Item('e'), new Item((CharSequence) "ln"), new Item((CharSequence) "lg"),
+                    new Item((CharSequence) "√"), new Item('π'), new Item('^'), new Item('!'));
+        }
+        adapter.setItems(advancedItems);
     }
 
     private void appendBasicOperator(String operator) {
@@ -157,6 +208,10 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
 
 
     private void performBackspace() {
+        if (isFinalResult) {
+            performAllClear();
+            return;
+        }
         Editable text = tv_expressions.getEditableText();
         int length = text.length();
         if (length == 0)
@@ -209,15 +264,15 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         if (firstChar == '+')
             text.append(firstChar);
 
-        BigDecimal number = expressionBuilder.getNumber(expressionBuilder.getNumberCount() - 1);
+        double number = expressionBuilder.getNumber(expressionBuilder.getNumberCount() - 1);
         String format = expressionFormat.format(number);
         text.append(format);
     }
 
     private void performCalculate() {
-        BigDecimal result;
+        double result;
         try {
-            result = expressionBuilder.calculate();
+            result = expressionBuilder.calculate(isRad);
         } catch (ArithmeticException e) {
             tv_result.setText(R.string.cannot_divide_by_zero);
             return;

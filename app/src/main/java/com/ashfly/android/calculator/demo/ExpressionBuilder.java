@@ -7,8 +7,6 @@ package com.ashfly.android.calculator.demo;
 //将所有片段连接起来并计算
 //当前是版本3：直接创建算式整体来计算
 
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.UndefinedDecimal.*;
-
 import android.util.*;
 
 import java.math.*;
@@ -17,12 +15,13 @@ import java.util.*;
 public class ExpressionBuilder {
 
     public static final List<Character> BASIC_OPERATORS = Arrays.asList('+', '-', '×', '÷');
-    public static final List<Character> DIGIT_CHARS = Arrays.asList('1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'e', 'π');
-    public static final List<Character> SINGLE_CHARS = Arrays.asList('%', '(', ')');
+    public static final List<Character> DIGIT_CHARS = Arrays.asList('1', '2', '3', '4', '5', '6', '7', '8', '9', '0');
+    public static final List<Character> SEPARATE_CHARS = Arrays.asList('%', '(', ')', 'e', 'π'); //这些字符总会独占一个位置
+    public static final List<String> MATH_FUNCTIONS = Arrays.asList("√", "sin", "cos", "tan", "ln", "lg");
     public static final char EMPTY_CHAR = '\u0000';
     public static final int DIVISION_SCALE = 12;
     public static final String TAG = "ExpressionBuilder";
-
+    private static final double RATIO_TO_RAD = Math.PI / 180;
     /**
      * numberBuilders:  0      1       2       3       4      5       ...
      * operators:           0      1       2       3       4       ...
@@ -32,19 +31,27 @@ public class ExpressionBuilder {
 
     private int index = 0, unmatchedLeftBracket = 0;
 
-    private static BigDecimal parseNumber(String num) {
-        if (num.equals(""))
-            return UNKNOWN_SIGN_UNDEFINED_DECIMAL;
-        if (num.equals("+"))
-            return POSITIVE_UNDEFINED_DECIMAL;
-        if (num.equals("-"))
-            return NEGATIVE_UNDEFINED_DECIMAL;
+    private static double parseNumber(String num) {
+        if (num.equals("π"))
+            return Math.PI;
+        if (num.equals("e"))
+            return Math.E;
 
-        try {
-            return new BigDecimal(num);
-        } catch (NumberFormatException e) {
-            return UNKNOWN_SIGN_UNDEFINED_DECIMAL;
+        for (char c : num.toCharArray()) {
+            if (DIGIT_CHARS.contains(c)) {
+                try {
+                    return Double.parseDouble(num);
+                } catch (NumberFormatException e) {
+                    break;
+                }
+            }
         }
+
+        if (num.startsWith("+"))
+            return Double.POSITIVE_INFINITY;
+        if (num.startsWith("-"))
+            return Double.NEGATIVE_INFINITY;
+        return Double.NaN;
     }
 
     private static <E> int indexOfRange(List<E> list, E element, int start) {
@@ -69,8 +76,10 @@ public class ExpressionBuilder {
             return appendBasicOperator(c, builder);
         if (c == '%')
             return appendPercent(c, builder);
+        if (c == 'e' || c == 'π')
+            return appendPIorE(c, builder);
 
-        if (builder.length() == 1 && SINGLE_CHARS.contains(builder.charAt(0)))
+        if (builder.length() == 1 && SEPARATE_CHARS.contains(builder.charAt(0)))
             builder = createNewBuilder(EMPTY_CHAR);
 
         if (DIGIT_CHARS.contains(c))
@@ -151,10 +160,16 @@ public class ExpressionBuilder {
         return EMPTY_CHAR;
     }
 
-    public BigDecimal calculate() {
+    public void clear() {
+        numberBuilders.clear();
+        operators.clear();
+        index = 0;
+    }
+
+    public double calculate(boolean isRad) {
         int size = numberBuilders.size();
         if (size == 0)
-            return BigDecimal.valueOf(0);
+            return 0;
 
         tryGetCurrentBuilder();
 
@@ -176,12 +191,12 @@ public class ExpressionBuilder {
         }
 
         if (size == 0)
-            return BigDecimal.valueOf(0);
+            return 0;
 
-        List<BigDecimal> decimals = new ArrayList<>();
-        List<Character> decimalOperators = new ArrayList<>();
+        List<Double> numbers = new ArrayList<>();
+        List<Character> numberOperators = new ArrayList<>();
 
-        BigDecimal decimalResult;
+        double numberResult;
 
         int scopeStart, scopeEnd;
         boolean hasLeftBracket, hasRightBracket;
@@ -196,87 +211,101 @@ public class ExpressionBuilder {
                 scopeEnd = list.size() - 1;
 
             //将括号里的数字和运算符提取出来
-            decimals.clear();
-            decimalOperators.clear();
+            numbers.clear();
+            numberOperators.clear();
 
             for (int indexEntirely = scopeStart; indexEntirely <= scopeEnd; indexEntirely++) {
                 String num = list.get(indexEntirely);
 
-                //去除百分号
+                if (indexEntirely != scopeEnd)
+                    numberOperators.add(operators.get(indexEntirely));
+
                 if (num.equals("%")) {
                     list.remove(indexEntirely);
-                    scopeEnd--;
 
-                    //把百分号后的运算符移动到百分号前的数字的后边，即百分号前的位置
+                    scopeEnd--;
+                    indexEntirely--;
+
                     int indexInsideScope = indexEntirely - scopeStart;
-                    if (indexInsideScope == scopeEnd - scopeStart + 1) {
-                        indexEntirely--;
-                        indexInsideScope--;
-                        decimalOperators.remove(indexInsideScope);
-                        operators.remove(indexEntirely);
-                    } else {
-                        char operator = operators.get(indexEntirely);
-                        operators.remove(indexEntirely);
-                        indexEntirely--;
-                        indexInsideScope--;
-                        decimalOperators.set(indexInsideScope, operator);
-                        operators.set(indexEntirely, operator);
+                    numberOperators.remove(indexInsideScope);
+                    operators.remove(indexEntirely);
+                    double divided = numbers.get(indexInsideScope) / 100;
+                    numbers.set(indexInsideScope, divided);
+                    list.set(indexEntirely, String.valueOf(divided));
+
+                } else if (MATH_FUNCTIONS.contains(num)) {
+                    list.remove(indexEntirely);
+                    scopeEnd--;
+                    operators.remove(indexEntirely);
+
+                    double thisNum = parseNumber(list.get(indexEntirely));
+
+                    switch (num) {
+                        case "√":
+                            thisNum = Math.sqrt(thisNum);
+                            break;
+                        case "sin":
+                            thisNum = Math.sin(isRad ? thisNum : thisNum * RATIO_TO_RAD);
+                            break;
+                        case "cos":
+                            thisNum = Math.cos(isRad ? thisNum : thisNum * RATIO_TO_RAD);
+                            break;
+                        case "tan":
+                            thisNum = Math.tan(isRad ? thisNum : thisNum * RATIO_TO_RAD);
+                            break;
+                        case "ln":
+                            thisNum = Math.log(isRad ? thisNum : thisNum * RATIO_TO_RAD);
+                            break;
+                        case "lg":
+                            thisNum = Math.log10(isRad ? thisNum : thisNum * RATIO_TO_RAD);
+                            break;
+
                     }
 
-                    BigDecimal divided = decimals.get(indexInsideScope).divide(BigDecimal.valueOf(100), DIVISION_SCALE, RoundingMode.DOWN);
-                    decimals.set(indexInsideScope, divided);
-                    list.set(indexEntirely, divided.toString());
                 } else {
-                    decimals.add(parseNumber(num));
-                    if (indexEntirely != scopeEnd)
-                        decimalOperators.add(operators.get(indexEntirely));
+                    numbers.add(parseNumber(num));
                 }
             }
 
             //先乘除,用前后两个数字的乘积或比值替换原来的两个数字
-            for (int i = 0; i < decimalOperators.size(); i++) {
+            for (int i = 0; i < numberOperators.size(); i++) {
 
-                char operator = decimalOperators.get(i);
+                char operator = numberOperators.get(i);
                 if (operator == EMPTY_CHAR)
                     operator = '×';
                 if (operator == '×' || operator == '÷') {
-                    BigDecimal thisDecimal = decimals.get(i);
-                    BigDecimal nextDecimal = decimals.get(i + 1);
+                    double thisNumber = numbers.get(i);
+                    double nextNumber = numbers.get(i + 1);
 
-                    if (thisDecimal instanceof UndefinedDecimal)
-                        thisDecimal = ((UndefinedDecimal) thisDecimal).convertToNormalDecimal(1);
-                    if (nextDecimal instanceof UndefinedDecimal)
-                        nextDecimal = ((UndefinedDecimal) nextDecimal).convertToNormalDecimal(1);
+                    if (Double.isNaN(thisNumber) || Double.isInfinite(thisNumber))
+                        thisNumber = convertInfinityToNormal(thisNumber, 1);
+                    if (Double.isNaN(nextNumber) || Double.isInfinite(nextNumber))
+                        nextNumber = convertInfinityToNormal(nextNumber, 1);
 
-                    BigDecimal value = operator == '×' ?
-                            thisDecimal.multiply(nextDecimal) :
-                            thisDecimal.divide(nextDecimal, DIVISION_SCALE, RoundingMode.DOWN);
+                    double value = operator == '×' ? thisNumber * nextNumber : thisNumber / nextNumber;
 
-                    decimals.set(i, value);
-                    decimals.remove(i + 1);
-                    decimalOperators.remove(i);
+                    numbers.set(i, value);
+                    numbers.remove(i + 1);
+                    numberOperators.remove(i);
                     i--;
                 }
             }
 
-            //再加减，如果这里有UndefinedDecimal，那么这个decimal直接会作为0参加加减运算，不对结果产生影响
-            BigDecimal result = BigDecimal.valueOf(0);
+            //再加减
+            double result = 0;
 
-            if (decimals.size() > 0) {
-                result = decimals.get(0);
-                for (int i = 0; i < decimalOperators.size(); i++) {
-                    char operator = decimalOperators.get(i);
-                    if (operator == '+')
-                        result = result.add(decimals.get(i + 1));
-                    else
-                        result = result.subtract(decimals.get(i + 1));
+            if (numbers.size() > 0) {
+                result = numbers.get(0);
+                for (int i = 0; i < numberOperators.size(); i++) {
+                    char operator = numberOperators.get(i);
+                    result = operator == '+' ? result + numbers.get(i + 1) : result - numbers.get(i + 1);
                 }
             }
 
             //将最后的结果放回，并删除多余位置
             if (scopeStart < list.size())
-                list.set(scopeStart, result.toString());
-            decimalResult = result;
+                list.set(scopeStart, String.valueOf(result));
+            numberResult = result;
 
             //删掉右括号
             if (hasRightBracket) {
@@ -300,10 +329,16 @@ public class ExpressionBuilder {
             list.remove(scopeStart - 1);
             operators.remove(scopeStart - 1);
         }
-        return decimalResult;
+        return numberResult;
     }
 
-    public BigDecimal getNumber(int index) {
+    private double convertInfinityToNormal(double orign, double base) {
+        if (orign < 0)
+            return -base;
+        return base;
+    }
+
+    public double getNumber(int index) {
         return parseNumber(numberBuilders.get(index).toString());
     }
 
@@ -342,7 +377,7 @@ public class ExpressionBuilder {
 
         for (int i = length - 1; i >= 0; i--) {
             char lastChar = builder.charAt(i);
-            if (SINGLE_CHARS.contains(lastChar) || DIGIT_CHARS.contains(lastChar)) {
+            if (SEPARATE_CHARS.contains(lastChar) || DIGIT_CHARS.contains(lastChar)) {
                 builder = createNewBuilder(EMPTY_CHAR);
                 builder.append(c);
                 return true;
@@ -381,6 +416,13 @@ public class ExpressionBuilder {
         return false;
     }
 
+    private boolean appendPIorE(char c, StringBuilder builder) {
+        if (builder.length() > 0)
+            builder = createNewBuilder(EMPTY_CHAR);
+        builder.append(c);
+        return true;
+    }
+
     private boolean appendDigitChar(char c, StringBuilder builder) {
         int length = builder.length();
         if (length == 0) {
@@ -410,36 +452,13 @@ public class ExpressionBuilder {
 
         for (int i = length - 1; i >= 0; i--) {
             char lastChar = builder.charAt(i);
-            if (SINGLE_CHARS.contains(lastChar) || DIGIT_CHARS.contains(lastChar)) {
+            if (SEPARATE_CHARS.contains(lastChar) || DIGIT_CHARS.contains(lastChar)) {
                 createNewBuilder(c);
                 return true;
             }
         }
 
         return false;
-    }
-
-    static class UndefinedDecimal extends BigDecimal {
-
-        public static final int SIGN_POSITIVE = 0, SIGN_NEGATIVE = 1, SIGN_UNKNOWN = -1;
-
-        public static UndefinedDecimal POSITIVE_UNDEFINED_DECIMAL = new UndefinedDecimal(SIGN_POSITIVE);
-        public static UndefinedDecimal NEGATIVE_UNDEFINED_DECIMAL = new UndefinedDecimal(SIGN_NEGATIVE);
-        public static UndefinedDecimal UNKNOWN_SIGN_UNDEFINED_DECIMAL = new UndefinedDecimal(SIGN_UNKNOWN);
-
-        final int sign;
-
-        public UndefinedDecimal(int sign) {
-            super(0);
-            this.sign = sign;
-        }
-
-        public BigDecimal convertToNormalDecimal(int base) {
-            if (sign == SIGN_NEGATIVE)
-                return new BigDecimal(-base);
-            return new BigDecimal(base);
-        }
-
     }
 
 }
