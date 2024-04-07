@@ -17,11 +17,12 @@ public class ExpressionBuilder {
     public static final List<Character> BASIC_OPERATORS = Arrays.asList('+', '-', '×', '÷');
     public static final List<Character> DIGIT_CHARS = Arrays.asList('1', '2', '3', '4', '5', '6', '7', '8', '9', '0');
     public static final List<Character> SEPARATE_CHARS = Arrays.asList('%', '(', ')', 'e', 'π'); //这些字符总会独占一个位置
-    public static final List<String> MATH_FUNCTIONS = Arrays.asList("√", "sin", "cos", "tan", "ln", "lg");
+    public static final List<String> MATH_FUNCTIONS = Arrays.asList("sin", "cos", "tan", "ln", "lg");
+
     public static final char EMPTY_CHAR = '\u0000';
-    public static final int DIVISION_SCALE = 12;
     public static final String TAG = "ExpressionBuilder";
     private static final double RATIO_TO_RAD = Math.PI / 180;
+
     /**
      * numberBuilders:  0      1       2       3       4      5       ...
      * operators:           0      1       2       3       4       ...
@@ -79,8 +80,11 @@ public class ExpressionBuilder {
         if (c == 'e' || c == 'π')
             return appendPIorE(c, builder);
 
-        if (builder.length() == 1 && SEPARATE_CHARS.contains(builder.charAt(0)))
-            builder = createNewBuilder(EMPTY_CHAR);
+        if (builder.length() == 1) {
+            char c1 = builder.charAt(0);
+            if (c1 == '√' || SEPARATE_CHARS.contains(c1))
+                builder = createNewBuilder(EMPTY_CHAR);
+        }
 
         if (DIGIT_CHARS.contains(c))
             return appendDigitChar(c, builder);
@@ -112,15 +116,36 @@ public class ExpressionBuilder {
             builder = createNewBuilder(EMPTY_CHAR);
         }
 
-        builder.append(bracket);
-
-        if (bracket == '(') {
-            unmatchedLeftBracket++;
-        } else
-            unmatchedLeftBracket--;
+        appendBracket(builder, bracket);
 
         Log.d(TAG, builder.toString());
         return bracket;
+    }
+
+    private void appendBracket(StringBuilder builder, char bracket) {
+        if (bracket == '(') {
+            unmatchedLeftBracket++;
+        } else if (bracket == ')')
+            unmatchedLeftBracket--;
+        else
+            return;
+
+        builder.append(bracket);
+    }
+
+    public boolean appendFunction(String function) {
+        if (!MATH_FUNCTIONS.contains(function) && !function.equals("√"))
+            return false;
+
+        StringBuilder builder = tryGetCurrentBuilder();
+        if (builder.length() > 0)
+            builder = createNewBuilder(EMPTY_CHAR);
+
+        builder.append(function);
+
+        if (!function.equals("√"))
+            appendBracket(createNewBuilder(EMPTY_CHAR), '(');
+        return true;
     }
 
     public char backspace() {
@@ -143,8 +168,17 @@ public class ExpressionBuilder {
 
             if (back == ')')
                 unmatchedLeftBracket++;
-            else if (back == '(')
+            else if (back == '(') {
                 unmatchedLeftBracket--;
+
+                if (index < numberBuilders.size()) {
+                    StringBuilder stringBuilder = numberBuilders.get(index);
+                    if (MATH_FUNCTIONS.contains(stringBuilder.toString())) {
+                        back = stringBuilder.charAt(0);
+                        stringBuilder.delete(0, stringBuilder.length());  // sin  (   3
+                    }
+                }
+            }
 
             Log.d(TAG, builder.toString());
             return back;
@@ -181,7 +215,8 @@ public class ExpressionBuilder {
         List<Character> operators = new ArrayList<>(this.operators);
         for (int i = size - 1; i >= 0; i--) {
             String number = list.get(i);
-            if (!number.equals("") && !number.equals("(") && !number.equals("+") && !number.equals("-")) {
+            if (!number.equals("") && !number.equals("(") && !number.equals("+") &&
+                    !number.equals("-") && !MATH_FUNCTIONS.contains(number) && !number.equals("√")) {
                 break;
             }
             list.remove(i);
@@ -220,23 +255,33 @@ public class ExpressionBuilder {
                 if (indexEntirely != scopeEnd)
                     numberOperators.add(operators.get(indexEntirely));
 
+                int indexInsideScope = indexEntirely - scopeStart;
+
                 if (num.equals("%")) {
+                    // 1    %   2   ->    0.01   2
+                    //   空   +                +
+
                     list.remove(indexEntirely);
 
-                    scopeEnd--;
                     indexEntirely--;
-
-                    int indexInsideScope = indexEntirely - scopeStart;
-                    numberOperators.remove(indexInsideScope);
                     operators.remove(indexEntirely);
+                    scopeEnd--;
+
+                    indexInsideScope--;
+                    numberOperators.remove(indexInsideScope);
+
                     double divided = numbers.get(indexInsideScope) / 100;
                     numbers.set(indexInsideScope, divided);
                     list.set(indexEntirely, String.valueOf(divided));
 
-                } else if (MATH_FUNCTIONS.contains(num)) {
+                } else if (num.equals("√") || MATH_FUNCTIONS.contains(num)) {
+                    //cos   1  ->
+                    //    空
                     list.remove(indexEntirely);
-                    scopeEnd--;
                     operators.remove(indexEntirely);
+                    numberOperators.remove(indexInsideScope);
+
+                    scopeEnd--;
 
                     double thisNum = parseNumber(list.get(indexEntirely));
 
@@ -251,17 +296,29 @@ public class ExpressionBuilder {
                             thisNum = Math.cos(isRad ? thisNum : thisNum * RATIO_TO_RAD);
                             break;
                         case "tan":
-                            thisNum = Math.tan(isRad ? thisNum : thisNum * RATIO_TO_RAD);
+                            if (!isRad)
+                                thisNum = thisNum * RATIO_TO_RAD;
+                            if ((thisNum - Math.PI / 2) % Math.PI == 0)
+                                throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
+
+                            if (thisNum % (Math.PI / 2) == 0)
+                                thisNum = 0;
+                            else
+                                thisNum = Math.tan(thisNum);
                             break;
                         case "ln":
-                            thisNum = Math.log(isRad ? thisNum : thisNum * RATIO_TO_RAD);
+                            thisNum = Math.log(thisNum);
                             break;
                         case "lg":
-                            thisNum = Math.log10(isRad ? thisNum : thisNum * RATIO_TO_RAD);
+                            thisNum = Math.log10(thisNum);
                             break;
 
                     }
 
+                    list.set(indexEntirely, String.valueOf(thisNum));
+                    numbers.add(thisNum);
+                    if (indexEntirely != scopeEnd)
+                        numberOperators.add(operators.get(indexEntirely));
                 } else {
                     numbers.add(parseNumber(num));
                 }
@@ -282,7 +339,14 @@ public class ExpressionBuilder {
                     if (Double.isNaN(nextNumber) || Double.isInfinite(nextNumber))
                         nextNumber = convertInfinityToNormal(nextNumber, 1);
 
-                    double value = operator == '×' ? thisNumber * nextNumber : thisNumber / nextNumber;
+                    double value;
+                    if (operator == '×')
+                        value = thisNumber * nextNumber;
+                    else {
+                        if (nextNumber == 0)
+                            throw new ArithmeticException(String.valueOf(R.string.cannot_divide_by_zero));
+                        value = thisNumber / nextNumber;
+                    }
 
                     numbers.set(i, value);
                     numbers.remove(i + 1);
@@ -377,7 +441,7 @@ public class ExpressionBuilder {
 
         for (int i = length - 1; i >= 0; i--) {
             char lastChar = builder.charAt(i);
-            if (SEPARATE_CHARS.contains(lastChar) || DIGIT_CHARS.contains(lastChar)) {
+            if (lastChar != '(' && (SEPARATE_CHARS.contains(lastChar) || DIGIT_CHARS.contains(lastChar))) {
                 builder = createNewBuilder(EMPTY_CHAR);
                 builder.append(c);
                 return true;
@@ -436,6 +500,17 @@ public class ExpressionBuilder {
         if (length == 1 && lastChar == '0')
             return false;
 
+
+        if (length > 1 && builder.charAt(0) == '+' || builder.charAt(0) == '-')
+            length--;
+
+        int place = length - builder.indexOf(".") - 1;
+        if (place < 0)
+            place = length;
+
+        if (place >= 12)
+            return false;
+
         builder.append(c);
         return true;
     }
@@ -452,8 +527,13 @@ public class ExpressionBuilder {
 
         for (int i = length - 1; i >= 0; i--) {
             char lastChar = builder.charAt(i);
-            if (SEPARATE_CHARS.contains(lastChar) || DIGIT_CHARS.contains(lastChar)) {
+            if (DIGIT_CHARS.contains(lastChar) || lastChar == 'π' || lastChar == ')' || lastChar == '%') {
                 createNewBuilder(c);
+                return true;
+            }
+            if ((lastChar == '√' || lastChar == '(') && (c == '+' || c == '-')) {
+                builder = createNewBuilder(EMPTY_CHAR);
+                builder.append(c);
                 return true;
             }
         }

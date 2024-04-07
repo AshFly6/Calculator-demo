@@ -144,7 +144,19 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
                 }
                 break;
 
+            case VIEW_TYPE_ADVANCED:
+                appendFunction(item.advanced);
+                break;
 
+        }
+    }
+
+    private void appendFunction(CharSequence advanced) {
+        if (expressionBuilder.appendFunction(advanced.toString())) {
+            tv_expressions.append(advanced);
+            if (advanced != "√")
+                tv_expressions.append("(");
+            performCalculate();
         }
     }
 
@@ -188,7 +200,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         char bracket = expressionBuilder.appendBracket();
         if (bracket == EMPTY_CHAR)
             return;
-        tv_expressions.append("" + bracket);
+        tv_expressions.append(String.valueOf(bracket));
         scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
     }
 
@@ -218,7 +230,9 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             return;
         char c = expressionBuilder.backspace();
 
-        if (c == '.' || c == '(' || c == ')' || c == '%' || BASIC_OPERATORS.contains(c)) {
+        if (c == 'c' || c == 't' || c == 's' || c == 'l' || c == '√') {
+            text.delete(text.toString().lastIndexOf(c), length);
+        } else if (c == '.' || c == '(' || c == ')' || c == '%' || BASIC_OPERATORS.contains(c)) {
             text.delete(length - 1, length); //直接删
         } else {
             String numberString = expressionBuilder.getNumberString(expressionBuilder.getNumberCount() - 1);
@@ -274,7 +288,11 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         try {
             result = expressionBuilder.calculate(isRad);
         } catch (ArithmeticException e) {
-            tv_result.setText(R.string.cannot_divide_by_zero);
+            String message = e.getMessage();
+            if (message == null)
+                tv_result.setText(R.string.err);
+            else
+                tv_result.setText(Integer.parseInt(message));
             return;
         }
 
