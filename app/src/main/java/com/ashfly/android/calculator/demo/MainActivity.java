@@ -30,6 +30,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             new Item('3'), new Item('2'), new Item('1'), new Item("+"),
             new Item('0'), new Item('.'), new Item("( )"), new Item("=")
     );
+    private final Item RADItem = new Item("RAD"), DEGItem = new Item("DEG");
     private LinearLayout layout;
     private HorizontalScrollView scroll_expressions, scroll_result;
     private TextView tv_expressions, tv_result;
@@ -99,7 +100,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         rv_digits.setAdapter(adapter);
 
         resultFormat.setMaximumFractionDigits(12);
-        resultFormat.setRoundingMode(RoundingMode.DOWN);
+        resultFormat.setRoundingMode(RoundingMode.HALF_UP);
     }
 
     @Override public void onClick(Item item) {
@@ -112,31 +113,10 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
                 }
                 break;
 
-            case VIEW_TYPE_OPERATOR:
-                String operator = item.operator;
-                if ("AC".equals(operator)) {
-                    performAllClear();
-                    break;
-                }
-
-                if (isFinalResult)
-                    return;
-
-                if ("=".equals(operator)) {
-                    performEqualSign();
-                    break;
-                }
-
-                if ("( )".equals(operator))
-                    appendBracket();
-                else
-                    appendBasicOperator(operator);
-                performCalculate();
-                break;
-
             case VIEW_TYPE_SPECIAL:
                 if (item.resourceId == R.drawable.ic_backspace) {
                     performBackspace();
+                    performCalculate();
                 } else if (item.resourceId == R.drawable.ic_expand_more) {
                     performSwitchAdvancedPanel(true);
                 } else if (item.resourceId == R.drawable.ic_expand_less) {
@@ -145,18 +125,58 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
                 break;
 
             case VIEW_TYPE_ADVANCED:
-                appendFunction(item.advanced);
+                if (item.advanced.length() > 1)
+                    appendFunction(item.advanced);
+                else
+                    appendOperator(item.advanced.toString());
+                performCalculate();
                 break;
 
+            case VIEW_TYPE_OPERATOR:
+                String operator = item.operator;
+                if (operator == null)
+                    break;
+                if (operator.equals("AC")) {
+                    performAllClear();
+                    break;
+                }
+                if (operator.equals("RAD") || operator.equals("DEG")) {
+                    performSwitchRad(!isRad);
+                    performCalculate();
+                    break;
+                }
+
+                if (isFinalResult)
+                    return;
+
+                if (operator.equals("=")) {
+                    performEqualSign();
+                    break;
+                }
+                if (operator.equals("( )")) {
+                    appendBracket();
+                    performCalculate();
+                    break;
+                }
+                if (operator.equals("%") || BASIC_OPERATORS.contains(operator.charAt(0))) {
+                    appendOperator(operator);
+                    performCalculate();
+                    break;
+                }
+                break;
         }
     }
 
+    private void performSwitchRad(boolean rad) {
+        adapter.setItem(4, rad ? RADItem : DEGItem);
+        this.isRad = rad;
+    }
+
     private void appendFunction(CharSequence advanced) {
-        if (expressionBuilder.appendFunction(advanced.toString())) {
+        if (expressionBuilder.appendLeadingFunction(advanced.toString())) {
             tv_expressions.append(advanced);
-            if (advanced != "√")
-                tv_expressions.append("(");
-            performCalculate();
+            tv_expressions.append("(");
+            scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
         }
     }
 
@@ -171,6 +191,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         expressionBuilder.clear();
         tv_expressions.setText("", TextView.BufferType.EDITABLE);
         tv_result.setText("0");
+        tv_result.setTextColor(Color.GRAY);
         isFinalResult = false;
     }
 
@@ -181,16 +202,17 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         }
         if (advancedItems == null) {
             advancedItems = Arrays.asList(new Item(R.drawable.ic_expand_less), new Item(R.drawable.ic_backspace), new Item("AC"), new Item(),
-                    new Item("DEG"), new Item((CharSequence) "sin"), new Item((CharSequence) "cos"), new Item((CharSequence) "tan"),
+                    DEGItem, new Item((CharSequence) "sin"), new Item((CharSequence) "cos"), new Item((CharSequence) "tan"),
                     new Item("INV"), new Item('e'), new Item((CharSequence) "ln"), new Item((CharSequence) "lg"),
-                    new Item((CharSequence) "√"), new Item('π'), new Item('^'), new Item('!'));
+                    new Item((CharSequence) "√"), new Item('π'), new Item((CharSequence) "^"), new Item((CharSequence) "!"));
         }
         adapter.setItems(advancedItems);
+        if (isRad)
+            adapter.setItem(4, RADItem);
     }
 
-    private void appendBasicOperator(String operator) {
-        char c = operator.charAt(0);
-        if (expressionBuilder.append(c)) {
+    private void appendOperator(String operator) {
+        if (expressionBuilder.appendChar(operator.charAt(0))) {
             tv_expressions.append(operator);
             scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
         }
@@ -205,7 +227,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     }
 
     private void appendDigit(Item item) {
-        if (expressionBuilder.append(item.digit)) {
+        if (expressionBuilder.appendChar(item.digit)) {
             Editable text = tv_expressions.getEditableText();
             String numberString = expressionBuilder.getNumberString(expressionBuilder.getNumberCount() - 1);
             if (numberString.length() < 3 || numberString.contains("."))
@@ -228,11 +250,13 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         int length = text.length();
         if (length == 0)
             return;
-        char c = expressionBuilder.backspace();
 
-        if (c == 'c' || c == 't' || c == 's' || c == 'l' || c == '√') {
-            text.delete(text.toString().lastIndexOf(c), length);
-        } else if (c == '.' || c == '(' || c == ')' || c == '%' || BASIC_OPERATORS.contains(c)) {
+        char displayedLastChar = text.charAt(length - 1);
+        char deletedChar = expressionBuilder.backspace(displayedLastChar);
+
+        if (deletedChar != displayedLastChar) {
+            text.delete(text.toString().lastIndexOf(deletedChar), length);
+        } else if (ADVANCED_OPERATORS.contains(deletedChar) || SEPARATE_CHARS.contains(deletedChar) || BASIC_OPERATORS.contains(deletedChar)) {
             text.delete(length - 1, length); //直接删
         } else {
             String numberString = expressionBuilder.getNumberString(expressionBuilder.getNumberCount() - 1);
@@ -244,11 +268,11 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         }
         tv_expressions.setText(text, TextView.BufferType.EDITABLE);
         scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
-        performCalculate();
     }
 
     private void performExpressionThousandSeparator(Editable text, String numberString) {
         //先将原有的整数部分全部删掉，再替换成千位分隔符格式
+
         char delete;
         char firstChar = numberString.charAt(0);
         int length = text.length();
@@ -266,7 +290,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             }
 
             //删掉数字
-            if ((delete >= '0' && delete <= '9') || delete == ',') {
+            if (DIGIT_CHARS.contains(delete) || delete == ',') {
                 text.delete(length - 1, length);
                 length--;
             } else {
@@ -284,19 +308,18 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     }
 
     private void performCalculate() {
-        double result;
         try {
-            result = expressionBuilder.calculate(isRad);
+            double result = expressionBuilder.calculate(isRad);
+            tv_result.setText(resultFormat.format(result));
+            tv_result.setTextColor(Color.GRAY);
+            scroll_result.post(() -> scroll_result.fullScroll(View.FOCUS_LEFT));
         } catch (ArithmeticException e) {
             String message = e.getMessage();
             if (message == null)
                 tv_result.setText(R.string.err);
             else
                 tv_result.setText(Integer.parseInt(message));
-            return;
+            tv_result.setTextColor(Color.RED);
         }
-
-        tv_result.setText(resultFormat.format(result));
-        scroll_result.post(() -> scroll_result.fullScroll(View.FOCUS_LEFT));
     }
 }
