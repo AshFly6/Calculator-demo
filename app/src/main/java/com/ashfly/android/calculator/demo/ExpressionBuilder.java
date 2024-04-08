@@ -189,6 +189,10 @@ public class ExpressionBuilder {
             char lastChar = builder.charAt(i);
             if ((lastChar != '(' && lastChar != '√') &&
                     (ADVANCED_OPERATORS.contains(lastChar) || SEPARATE_CHARS.contains(lastChar) || DIGIT_CHARS.contains(lastChar))) {
+
+                if (c == '!' && builder.charAt(0) == '-')
+                    splitNegative(builder);
+
                 builder = createNewBuilder(EMPTY_CHAR);
                 builder.append(c);
                 return true;
@@ -271,19 +275,32 @@ public class ExpressionBuilder {
 
         for (int i = length - 1; i >= 0; i--) {
             char lastChar = builder.charAt(i);
-            if ((ADVANCED_OPERATORS.contains(lastChar) || lastChar == '(') && (c == '+' || c == '-')) {
+            if ((c == '+' || c == '-') && (lastChar == '√' || lastChar == '(')) {
                 builder = createNewBuilder(EMPTY_CHAR);
                 builder.append(c);
                 return true;
             }
-            if (ADVANCED_OPERATORS.contains(lastChar) || DIGIT_CHARS.contains(lastChar) ||
-                    lastChar == 'π' || lastChar == 'e' || lastChar == ')' || lastChar == '%') {
+            if (DIGIT_CHARS.contains(lastChar)) {
+                if (c == '^' && builder.charAt(0) == '-') {
+                    splitNegative(builder);
+                }
+                createNewBuilder(c);
+                return true;
+            }
+            if (lastChar == '!' || lastChar == 'π' || lastChar == 'e' || lastChar == ')' || lastChar == '%') {
                 createNewBuilder(c);
                 return true;
             }
         }
 
         return false;
+    }
+
+    private void splitNegative(StringBuilder builder) {
+        String s = builder.toString().replace("-", "");
+        builder.delete(1, builder.length());
+        builder = createNewBuilder(EMPTY_CHAR);
+        builder.append(s);
     }
 
     public char backspace(char displayedLastChar) {
@@ -434,15 +451,15 @@ public class ExpressionBuilder {
                         case "√":
                             thisNum = Math.sqrt(thisNum);
                             break;
-                            
+
                         case "sin":
                             thisNum = Math.sin(isRad ? thisNum : Math.toRadians(thisNum));
                             break;
-                            
+
                         case "cos":
                             thisNum = Math.cos(isRad ? thisNum : Math.toRadians(thisNum));
                             break;
-                            
+
                         case "tan":
                             if (!isRad)
                                 thisNum = Math.toRadians(thisNum);
@@ -451,11 +468,11 @@ public class ExpressionBuilder {
 
                             thisNum = Math.tan(thisNum);
                             break;
-                            
+
                         case "ln":
                             thisNum = Math.log(thisNum);
                             break;
-                            
+
                         case "lg":
                             thisNum = Math.log10(thisNum);
                             break;
@@ -472,13 +489,13 @@ public class ExpressionBuilder {
             }
 
             //先乘方，再乘法、除法
-            boolean hasFactorial = numberOperators.contains('^');
+            boolean hasRow = numberOperators.contains('^');
             for (int i = 0; i < numberOperators.size(); i++) {
 
                 char operator = numberOperators.get(i);
                 if (operator == EMPTY_CHAR)
                     operator = '×';
-                if (hasFactorial ? operator == '^' :
+                if (hasRow ? operator == '^' :
                         (operator == '×' || operator == '÷')) {
                     double thisNumber = numbers.get(i);
                     double nextNumber = numbers.get(i + 1);
@@ -507,9 +524,9 @@ public class ExpressionBuilder {
                     i--;
                 }
 
-                if (i == numberOperators.size() && hasFactorial) {
-                    hasFactorial = false;
-                    i = 0;
+                if (i == numberOperators.size() - 1 && hasRow) {
+                    hasRow = false;
+                    i = -1;
                 }
             }
 
@@ -521,14 +538,14 @@ public class ExpressionBuilder {
                 for (int i = 0; i < numberOperators.size(); i++) {
                     char operator = numberOperators.get(i);
                     result = operator == '+' ? result + numbers.get(i + 1) : result - numbers.get(i + 1);
+                    checkInfinite(result);
                 }
             }
 
             //将最后的结果放回，并删除多余位置
+            checkInfinite(result);
             if (Math.abs(result) < EPSILON)
                 result = 0;
-            if (Double.isNaN(result))
-                throw new ArithmeticException(String.valueOf(R.string.value_too_gigantic));
             if (scopeStart < list.size())
                 list.set(scopeStart, String.valueOf(result));
 
