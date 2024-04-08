@@ -7,6 +7,8 @@ package com.ashfly.android.calculator.demo;
 //将所有片段连接起来并计算
 //当前是版本3：直接创建算式整体来计算
 
+import android.text.*;
+import android.text.style.*;
 import android.util.*;
 
 import androidx.annotation.*;
@@ -25,7 +27,8 @@ public class ExpressionBuilder {
 
     public static final char EMPTY_CHAR = '\u0000';
     public static final String TAG = "ExpressionBuilder";
-    public static final double EPSILON = 1e-12;
+    public static final double EPSILON = 1e-15;
+    public static final int ACCURACY_LIMIT = 15;
 
     /**
      * numberBuilders:  0      1       2       3       4      5       ...
@@ -102,6 +105,21 @@ public class ExpressionBuilder {
         return base;
     }
 
+    private static CharSequence makePowExpression(String base, String exponent) {
+        SpannableString superscript = new SpannableString(exponent);
+        int length = exponent.length();
+        superscript.setSpan(new SuperscriptSpan(), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        superscript.setSpan(new RelativeSizeSpan(0.5f), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        SpannableStringBuilder builder = new SpannableStringBuilder();
+        builder.append(base)
+               .append(superscript);
+        return builder;
+    }
+
+    public static DigitAdapter.Item newPowItem(String base, String exponent) {
+        return new DigitAdapter.Item(makePowExpression(base, exponent));
+    }
+
     public boolean appendChar(char c) {
         StringBuilder builder = tryGetCurrentBuilder();
 
@@ -119,6 +137,12 @@ public class ExpressionBuilder {
             if (ADVANCED_OPERATORS.contains(firstChar) || SEPARATE_CHARS.contains(firstChar))
                 builder = createNewBuilder(EMPTY_CHAR);
         }
+
+        int length = builder.length();
+        if (length > 1 && (builder.charAt(0) == '+' || builder.charAt(0) == '-'))
+            length--;
+        if (length >= ACCURACY_LIMIT)
+            return false;
 
         if (DIGIT_CHARS.contains(c))
             return appendDigitChar(c, builder);
@@ -249,14 +273,6 @@ public class ExpressionBuilder {
 
         //不得在数字开头加多余的0
         if (length == 1 && lastChar == '0')
-            return false;
-        if (length > 1 && builder.charAt(0) == '+' || builder.charAt(0) == '-')
-            length--;
-
-        int place = length - builder.indexOf(".") - 1;
-        if (place < 0)
-            place = length;
-        if (place >= 12)
             return false;
 
         builder.append(c);
@@ -479,6 +495,9 @@ public class ExpressionBuilder {
 
                     }
 
+                    if (Math.abs(thisNum) < EPSILON)
+                        thisNum = 0;
+
                     list.set(indexEntirely, String.valueOf(thisNum));
                     numbers.add(thisNum);
                     if (indexEntirely != scopeEnd)
@@ -508,9 +527,9 @@ public class ExpressionBuilder {
                     double value;
                     if (operator == '^')
                         value = Math.pow(thisNumber, nextNumber);
-                    else if (operator == '×')
+                    else if (operator == '×') {
                         value = thisNumber * nextNumber;
-                    else {
+                    } else {
                         if (nextNumber == 0)
                             throw new ArithmeticException(String.valueOf(R.string.cannot_divide_by_zero));
                         value = thisNumber / nextNumber;
@@ -544,8 +563,6 @@ public class ExpressionBuilder {
 
             //将最后的结果放回，并删除多余位置
             checkInfinite(result);
-            if (Math.abs(result) < EPSILON)
-                result = 0;
             if (scopeStart < list.size())
                 list.set(scopeStart, String.valueOf(result));
 
@@ -577,16 +594,12 @@ public class ExpressionBuilder {
         return numberResult;
     }
 
-    public double getNumber(int index) {
+    public double getCurrentNumber() {
         return parseNumber(numberBuilders.get(index).toString());
     }
 
-    public String getNumberString(int index) {
+    public String getCurrentNumberString() {
         return numberBuilders.get(index).toString();
-    }
-
-    public int getNumberCount() {
-        return numberBuilders.size();
     }
 
     private StringBuilder tryGetCurrentBuilder() {

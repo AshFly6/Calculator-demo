@@ -1,5 +1,6 @@
 package com.ashfly.android.calculator.demo;
 
+import android.annotation.*;
 import android.content.*;
 import android.graphics.*;
 import android.util.*;
@@ -29,7 +30,7 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
         this.list.addAll(list);
     }
 
-    public void setItems(List<Item> list) {
+    @SuppressLint("NotifyDataSetChanged") public void setItems(List<Item> list) {
         this.list.clear();
         this.list.addAll(list);
         notifyDataSetChanged();
@@ -39,6 +40,26 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
         this.list.set(index, item);
         notifyItemChanged(index);
     }
+
+    public void setItems(int[] indexes, List<Item> list) {
+        int size = list.size();
+        int length = indexes.length;
+
+        if (length == size) {
+            int i = 0;
+            for (int index : indexes) {
+                this.list.set(index, list.get(i));
+                notifyItemChanged(index);
+                i++;
+            }
+        } else if (this.list.size() == size) {
+            for (int index : indexes) {
+                this.list.set(index, list.get(index));
+                notifyItemChanged(index);
+            }
+        }
+    }
+
 
     @Override public int getItemViewType(int position) {
         return list.get(position).viewType;
