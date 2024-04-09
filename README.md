@@ -1,2 +1,23 @@
-# Calculator-demo
- A demo of a simple calculator as the author's first project, partly imitating the layout in Google Calculator.
+
+![image](https://github.com/AshFly6/Calculator-demo/assets/99202698/795678ed-af62-43f9-a294-a66f8ab7d5f4)
+
+# 计算器 - Demo
+
+可以直接无视本项目，本项目只是作者学习安卓应用开发的阶段性成果的展示。本项目是支持 Android 4+ 的一款简单的的计算器软件，主界面参考了 Google 计算器。
+
+## 已实现的功能
+
+- 标准计算器
+- 数学函数
+- 没了……
+
+但会持续更新——我会随着学习开发安卓应用逐步完善这个计算器。
+
+## 已知的问题
+
+以下问题会随着开发者学习安卓应用开发而修复。
+
+1. 旋转时丢失数据，显示不正常。
+2. 在非全面屏设备上界面显示不完整。
+3. 不支持深色模式。
+4. ……
