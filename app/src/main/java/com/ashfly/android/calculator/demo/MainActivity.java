@@ -18,6 +18,7 @@ import java.math.*;
 import java.text.*;
 import java.util.*;
 
+/** @noinspection UnusedReturnValue*/
 public class MainActivity extends AppCompatActivity implements OnItemClickListener {
 
     private final NumberFormat resultFormat = NumberFormat.getNumberInstance();
@@ -39,11 +40,9 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             DEGItem, new Item((CharSequence) "sin"), new Item((CharSequence) "cos"), new Item((CharSequence) "tan"),
             new Item("INV"), new Item('e'), new Item((CharSequence) "ln"), new Item((CharSequence) "lg"),
             new Item((CharSequence) "√"), new Item('π'), new Item((CharSequence) "^"), new Item((CharSequence) "!"));
-
     private final List<Item> INVItems = Arrays.asList(
             newPowItem("sin", "-1"), newPowItem("cos", "-1"), newPowItem("tan", "-1"),
             newPowItem("e", "x"), newPowItem("10", "x"), newPowItem("x", "2"));
-
     private final int[] INVIndexes = new int[]{5, 6, 7, 10, 11, 12};
 
     private LinearLayout layout;
@@ -128,7 +127,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         switch (viewType) {
             case VIEW_TYPE_DIGIT:
                 if (!isFinalResult) {
-                    appendDigit(item);
+                    appendDigit(item.digit);
                     performCalculate();
                 }
                 break;
@@ -145,11 +144,45 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
                 break;
 
             case VIEW_TYPE_ADVANCED:
-                if (item.advanced.length() > 1)
-                    appendFunction(item.advanced);
-                else
-                    appendOperator(item.advanced.toString());
-                performCalculate();
+                if (isFinalResult)
+                    return;
+
+                CharSequence advanced = item.advanced;
+                int length = advanced.length();
+
+                if (length == 1) {
+                    appendOperator(advanced.charAt(0));
+                    performCalculate();
+                    break;
+                }
+
+                if (length > 1) {
+                    String s = advanced.toString();
+
+                    switch (s) {
+                        case "x2":  //x^2
+                            if (appendOperator('^'))
+                                appendDigit('2');
+                            break;
+
+                        case "10x":  // 10^x
+                            if (appendDigit('1') && appendDigit('0'))
+                                appendOperator('^');
+                            break;
+
+                        case "ex"://e^x
+                            appendFunction("exp");
+                            break;
+
+                        default:
+                            appendFunction(advanced);
+                            break;
+
+                    }
+
+                    performCalculate();
+                }
+
                 break;
 
             case VIEW_TYPE_OPERATOR:
@@ -181,8 +214,9 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
                     performCalculate();
                     break;
                 }
-                if (operator.equals("%") || BASIC_OPERATORS.contains(operator.charAt(0))) {
-                    appendOperator(operator);
+                char firstChar = operator.charAt(0);
+                if (firstChar == '%' || BASIC_OPERATORS.contains(firstChar)) {
+                    appendOperator(firstChar);
                     performCalculate();
                     break;
                 }
@@ -215,12 +249,25 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         this.isRad = rad;
     }
 
-    private void appendFunction(CharSequence advanced) {
-        if (expressionBuilder.appendLeadingFunction(advanced.toString())) {
-            tv_expressions.append(advanced);
-            tv_expressions.append("(");
-            scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
+    private boolean appendFunction(CharSequence advanced) {
+        if (!expressionBuilder.appendLeadingFunction(advanced.toString()))
+            return false;
+
+        Editable text = tv_expressions.getEditableText();
+        text.append(advanced.toString());
+
+        if (advanced instanceof SpannableString) {
+            //拼接时需要在新的位置设置新的Span
+            SpannableString spannable = (SpannableString) advanced;
+
+            int appendedLength = text.length();
+            int start = appendedLength - spannable.length() + spannable.getSpanStart(SUPERSCRIPT_SPAN);
+            text.setSpan(new SuperscriptSpan(), start, appendedLength, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            text.setSpan(new RelativeSizeSpan(0.5f), start, appendedLength, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
+        tv_expressions.append("(");
+        scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
+        return true;
     }
 
     private void performEqualSign() {
@@ -238,32 +285,35 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         isFinalResult = false;
     }
 
-    private void appendOperator(String operator) {
-        if (expressionBuilder.appendChar(operator.charAt(0))) {
-            tv_expressions.append(operator);
-            scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
-        }
+    private boolean appendOperator(char operator) {
+        if (!expressionBuilder.appendChar(operator))
+            return false;
+        tv_expressions.append(String.valueOf(operator));
+        scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
+        return true;
     }
 
-    private void appendBracket() {
+    private boolean appendBracket() {
         char bracket = expressionBuilder.appendBracket();
         if (bracket == EMPTY_CHAR)
-            return;
+            return false;
         tv_expressions.append(String.valueOf(bracket));
         scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
+        return true;
     }
 
-    private void appendDigit(Item item) {
-        if (expressionBuilder.appendChar(item.digit)) {
-            Editable text = tv_expressions.getEditableText();
-            String numberString = expressionBuilder.getCurrentNumberString();
-            if (numberString.length() < 3 || numberString.contains("."))
-                text.append(item.digit);
-            else
-                performExpressionThousandSeparator(text, numberString);
+    private boolean appendDigit(char digit) {
+        if (!expressionBuilder.appendChar(digit))
+            return false;
+        Editable text = tv_expressions.getEditableText();
+        String numberString = expressionBuilder.getCurrentNumberString();
+        if (numberString.length() < 3 || numberString.contains("."))
+            text.append(digit);
+        else
+            performExpressionThousandSeparator(text, numberString);
 
-            scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
-        }
+        scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
+        return true;
     }
 
     private void performBackspace() {
@@ -357,10 +407,10 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
                     tv_result.setText(String.valueOf(result));
                 else
                     tv_result.setText(resultFormat.format(result));
-
-                tv_result.setTextColor(Color.GRAY);
-                scroll_result.post(() -> scroll_result.fullScroll(View.FOCUS_LEFT));
             }
+
+            tv_result.setTextColor(Color.GRAY);
+            scroll_result.post(() -> scroll_result.fullScroll(View.FOCUS_LEFT));
         } catch (ArithmeticException e) {
             String message = e.getMessage();
             if (message == null)

@@ -15,6 +15,9 @@ import androidx.annotation.*;
 
 import java.util.*;
 
+/**
+ * @noinspection BooleanMethodIsAlwaysInverted
+ */
 public class ExpressionBuilder {
 
     public static final List<Character> DIGIT_CHARS = Arrays.asList('1', '2', '3', '4', '5', '6', '7', '8', '9', '0');
@@ -23,12 +26,14 @@ public class ExpressionBuilder {
     public static final List<Character> ADVANCED_OPERATORS = Arrays.asList('!', '√', '%');
 
     public static final List<Character> SEPARATE_CHARS = Arrays.asList('(', ')', 'e', 'π'); //这些字符总会独占一个位置
-    public static final List<String> MATH_FUNCTIONS = Arrays.asList("sin", "cos", "tan", "ln", "lg");
+    public static final List<String> MATH_FUNCTIONS = Arrays.asList("sin", "cos", "tan", "ln", "lg", "exp", "sin-1", "cos-1", "tan-1");
 
     public static final char EMPTY_CHAR = '\u0000';
     public static final String TAG = "ExpressionBuilder";
     public static final double EPSILON = 1e-15;
     public static final int ACCURACY_LIMIT = 15;
+    public static final SuperscriptSpan SUPERSCRIPT_SPAN = new SuperscriptSpan();
+    public static final RelativeSizeSpan RELATIVE_SIZE_SPAN = new RelativeSizeSpan(0.5f);
 
     /**
      * numberBuilders:  0      1       2       3       4      5       ...
@@ -62,6 +67,7 @@ public class ExpressionBuilder {
         return Double.NaN;
     }
 
+    /** @noinspection SameParameterValue*/
     private static <E> int indexOfRange(List<E> list, E element, int start) {
         int end = list.size();
         if (element == null)
@@ -99,21 +105,19 @@ public class ExpressionBuilder {
             throw new ArithmeticException(String.valueOf(R.string.value_too_gigantic));
     }
 
-    private static double convertInfinityToNormal(double origin, double base) {
+    private static double convertInfinityToNormal(double origin) {
         if (origin < 0)
-            return -base;
-        return base;
+            return - 1;
+        return 1;
     }
 
     private static CharSequence makePowExpression(String base, String exponent) {
-        SpannableString superscript = new SpannableString(exponent);
-        int length = exponent.length();
-        superscript.setSpan(new SuperscriptSpan(), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        superscript.setSpan(new RelativeSizeSpan(0.5f), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        SpannableStringBuilder builder = new SpannableStringBuilder();
-        builder.append(base)
-               .append(superscript);
-        return builder;
+        SpannableString pow = new SpannableString(base + exponent);
+        int length = base.length();
+        int totalLength = pow.length();
+        pow.setSpan(SUPERSCRIPT_SPAN, length, totalLength, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        pow.setSpan(RELATIVE_SIZE_SPAN, length, totalLength, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return pow;
     }
 
     public static DigitAdapter.Item newPowItem(String base, String exponent) {
@@ -390,7 +394,7 @@ public class ExpressionBuilder {
         for (int i = size - 1; i >= 0; i--) {
             String number = list.get(i);
             if (!number.equals("") && !number.equals("(") && !number.equals("+") && !number.equals("-") &&
-                    !MATH_FUNCTIONS.contains(number) && !number.equals("^") && !number.equals("√")) {
+                    !number.equals("^") && !number.equals("√") && !MATH_FUNCTIONS.contains(number)) {
                 break;
             }
             list.remove(i);
@@ -463,45 +467,79 @@ public class ExpressionBuilder {
 
                     double thisNum = parseNumber(list.get(indexEntirely));
 
-                    switch (num) {
-                        case "√":
-                            thisNum = Math.sqrt(thisNum);
-                            break;
+                    if (num.contains("-1")) {
+                        if (thisNum > 1 || thisNum < -1)
+                            throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
 
-                        case "sin":
-                            thisNum = Math.sin(isRad ? thisNum : Math.toRadians(thisNum));
-                            break;
+                        switch (num) {
+                            case "sin-1":
+                                thisNum = Math.asin(thisNum);
+                                break;
 
-                        case "cos":
-                            thisNum = Math.cos(isRad ? thisNum : Math.toRadians(thisNum));
-                            break;
+                            case "cos-1":
+                                thisNum = Math.acos(thisNum);
+                                break;
 
-                        case "tan":
-                            if (!isRad)
-                                thisNum = Math.toRadians(thisNum);
-                            if ((thisNum - Math.PI / 2) % Math.PI == 0)
-                                throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
+                            case "tan-1":
+                                thisNum = Math.atan(thisNum);
+                                break;
+                        }
 
-                            thisNum = Math.tan(thisNum);
-                            break;
+                        if (!isRad)
+                            thisNum = Math.toDegrees(thisNum);
 
-                        case "ln":
-                            thisNum = Math.log(thisNum);
-                            break;
+                    } else if (num.length() == 1 || num.startsWith("l")) {
+                        if (thisNum <= 0)
+                            throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
 
-                        case "lg":
-                            thisNum = Math.log10(thisNum);
-                            break;
+                        switch (num) {
+                            case "√":
+                                thisNum = Math.sqrt(thisNum);
+                                break;
 
+                            case "ln":
+                                thisNum = Math.log(thisNum);
+                                break;
+
+                            case "lg":
+                                thisNum = Math.log10(thisNum);
+                                break;
+                        }
+
+                    } else {
+                        switch (num) {
+                            case "exp":
+                                thisNum = Math.exp(thisNum);
+
+                            case "sin":
+                                thisNum = Math.sin(isRad ? thisNum : Math.toRadians(thisNum));
+                                break;
+
+                            case "cos":
+                                thisNum = Math.cos(isRad ? thisNum : Math.toRadians(thisNum));
+                                break;
+
+                            case "tan":
+                                if (!isRad)
+                                    thisNum = Math.toRadians(thisNum);
+                                if ((thisNum - Math.PI / 2) % Math.PI == 0)
+                                    throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
+
+                                thisNum = Math.tan(thisNum);
+                                break;
+
+                        }
                     }
 
-                    if (Math.abs(thisNum) < EPSILON)
-                        thisNum = 0;
+                    double floor = Math.floor(thisNum);
+                    if (Math.abs(floor - thisNum) < EPSILON)
+                        thisNum = floor;
 
                     list.set(indexEntirely, String.valueOf(thisNum));
                     numbers.add(thisNum);
                     if (indexEntirely != scopeEnd)
                         numberOperators.add(operators.get(indexEntirely));
+
                 } else {
                     numbers.add(parseNumber(num));
                 }
@@ -520,9 +558,9 @@ public class ExpressionBuilder {
                     double nextNumber = numbers.get(i + 1);
 
                     if (Double.isInfinite(thisNumber))
-                        thisNumber = convertInfinityToNormal(thisNumber, 1);
+                        thisNumber = convertInfinityToNormal(thisNumber);
                     if (Double.isInfinite(nextNumber))
-                        nextNumber = convertInfinityToNormal(nextNumber, 1);
+                        nextNumber = convertInfinityToNormal(nextNumber);
 
                     double value;
                     if (operator == '^')

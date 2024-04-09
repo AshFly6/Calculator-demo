@@ -75,7 +75,7 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
 
         switch (item.viewType) {
             case VIEW_TYPE_DIGIT:
-                ((TextView) view).setText("" + item.digit);
+                ((TextView) view).setText(String.valueOf(item.digit));
                 break;
 
             case VIEW_TYPE_OPERATOR:
