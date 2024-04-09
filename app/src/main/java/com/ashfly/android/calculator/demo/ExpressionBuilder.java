@@ -546,13 +546,13 @@ public class ExpressionBuilder {
             }
 
             //先乘方，再乘法、除法
-            boolean hasRow = numberOperators.contains('^');
+            boolean hasPow = numberOperators.contains('^');
             for (int i = 0; i < numberOperators.size(); i++) {
 
                 char operator = numberOperators.get(i);
                 if (operator == EMPTY_CHAR)
                     operator = '×';
-                if (hasRow ? operator == '^' :
+                if (hasPow ? operator == '^' :
                         (operator == '×' || operator == '÷')) {
                     double thisNumber = numbers.get(i);
                     double nextNumber = numbers.get(i + 1);
@@ -581,8 +581,8 @@ public class ExpressionBuilder {
                     i--;
                 }
 
-                if (i == numberOperators.size() - 1 && hasRow) {
-                    hasRow = false;
+                if (i == numberOperators.size() - 1 && hasPow) {
+                    hasPow = false;
                     i = -1;
                 }
             }
