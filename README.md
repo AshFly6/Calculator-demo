@@ -1,9 +1,8 @@
 
 ![image](https://github.com/AshFly6/Calculator-demo/assets/99202698/795678ed-af62-43f9-a294-a66f8ab7d5f4)
 
-# 计算器 - Demo
-
-可以直接无视本项目，本项目只是作者学习安卓应用开发的阶段性练习。本项目是支持 Android 4+ 的一款简单的的计算器软件，主界面参考了 Google 计算器。
+# 计算器 - Demo 
+本项目是作者学习安卓应用开发的阶段性练习。本项目是支持 Android 4+ 的一款简单的的计算器软件，主界面参考了 Google 计算器。
 
 ## 已实现的功能
 
