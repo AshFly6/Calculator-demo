@@ -1,12 +1,5 @@
 package com.ashfly.android.calculator.demo;
 
-//历史版本：
-//版本1：使用CalculatePhase，但只有支持一个运算符的算式
-//版本2：更新CalculatePhase，使之支持只包括同一级运算符的算式，
-//同时用List<CalculatorPhase>和List<Character> operators
-//将所有片段连接起来并计算
-//当前是版本3：直接创建算式整体来计算
-
 import android.text.*;
 import android.text.style.*;
 import android.util.*;

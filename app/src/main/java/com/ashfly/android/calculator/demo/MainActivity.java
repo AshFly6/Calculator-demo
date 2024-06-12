@@ -69,7 +69,9 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     }
 
     private void resizeViews() {
-        DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
+        DisplayMetrics displayMetrics = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
+
         int width = displayMetrics.widthPixels;
         int height = displayMetrics.heightPixels;
 
