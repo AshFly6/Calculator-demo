@@ -1,17 +1,23 @@
 package com.ashfly.android.calculator.demo;
 
-import android.annotation.*;
-import android.content.*;
-import android.graphics.*;
-import android.util.*;
-import android.view.*;
-import android.widget.*;
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageView;
+import android.widget.TextView;
 
-import androidx.annotation.*;
-import androidx.core.content.*;
-import androidx.recyclerview.widget.*;
+import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
 
@@ -20,17 +26,37 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
     public static final int VIEW_TYPE_SPECIAL = 3;
     public static final int VIEW_TYPE_ADVANCED = 4;
     public static final int VIEW_TYPE_EMPTY = 0;
-
-    private final int perLength;
     private final List<Item> list = new ArrayList<>();
+    private int width, height;
     private OnItemClickListener onItemClickListener;
+    private Drawable[] backgrounds;
 
-    public DigitAdapter(int perLength, List<Item> list) {
-        this.perLength = perLength;
+    public DigitAdapter(int width, int height, List<Item> list) {
+        this.width = width;
+        this.height = height;
         this.list.addAll(list);
     }
 
-    @SuppressLint("NotifyDataSetChanged") public void setItems(List<Item> list) {
+    public void setBackgrounds(Drawable digitalBackground, Drawable operatorBackground, Drawable specialBackground) {
+        if (backgrounds == null)
+            backgrounds = new Drawable[]{digitalBackground, operatorBackground, specialBackground};
+        else {
+            backgrounds[0] = digitalBackground;
+            backgrounds[1] = operatorBackground;
+            backgrounds[2] = specialBackground;
+        }
+    }
+
+    public void setItemSize(int width, int height) {
+        if (this.width == width && this.height == height)
+            return;
+        this.width = width;
+        this.height = height;
+        setItems(list);
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void setItems(List<Item> list) {
         this.list.clear();
         this.list.addAll(list);
         notifyDataSetChanged();
@@ -61,15 +87,19 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
     }
 
 
-    @Override public int getItemViewType(int position) {
+    @Override
+    public int getItemViewType(int position) {
         return list.get(position).viewType;
     }
 
-    @NonNull @Override public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        return VH.newVH(parent.getContext(), perLength, viewType);
+    @NonNull
+    @Override
+    public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        return VH.newVH(parent.getContext(), width, height, viewType, backgrounds);
     }
 
-    @Override public void onBindViewHolder(@NonNull VH holder, int position) {
+    @Override
+    public void onBindViewHolder(@NonNull VH holder, int position) {
         Item item = list.get(position);
         View view = holder.view;
 
@@ -100,7 +130,8 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
         });
     }
 
-    @Override public int getItemCount() {
+    @Override
+    public int getItemCount() {
         return list.size();
     }
 
@@ -149,58 +180,68 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
     public static class VH extends RecyclerView.ViewHolder {
 
         final View view;
-        final int perLength;
 
-        private VH(View view, int perLength) {
+        private VH(View view) {
             super(view);
             this.view = view;
-            this.perLength = perLength;
         }
 
-        public static VH newVH(Context context, int perLength, int viewType) {
+        //Drawable[] digitalBackground, operatorBackground, specialBackground
+        public static VH newVH(Context context, int width, int height, int viewType, Drawable[] backgrounds) {
+            Objects.requireNonNull(context);
+            if (backgrounds == null || backgrounds.length != 3)
+                throw new IllegalArgumentException("invalid backgrounds[]");
 
-            int margin = perLength / 10;
-            int margins = margin * 2;
-            int size = perLength - margins;
+            int horizontalMargin = width / 10;
+            int contentWidth = width - horizontalMargin * 2;
 
-            int background = -1;
+            int contentHeight, verticalMargin;
+            if (height > contentWidth) {
+                contentHeight = contentWidth;
+                verticalMargin = (height - contentHeight) / 2;
+            } else {
+                verticalMargin = height / 10;
+                contentHeight = height - verticalMargin * 2;
+            }
+
+
+            Drawable background = null;
             View view;
 
             if (viewType == VIEW_TYPE_SPECIAL) {
                 view = new ImageView(context);
-                ((ImageView) view).setScaleType(ImageView.ScaleType.FIT_XY);
-                view.setPadding(margins, margins, margins, margins);
-                background = R.drawable.drawable_background_special;
+                ((ImageView) view).setScaleType(ImageView.ScaleType.FIT_CENTER);
+                view.setPadding(horizontalMargin * 2, verticalMargin * 2, horizontalMargin * 2, verticalMargin * 2);
+                background = backgrounds[2];
             } else if (viewType == VIEW_TYPE_DIGIT || viewType == VIEW_TYPE_OPERATOR || viewType == VIEW_TYPE_ADVANCED) {
                 view = new TextView(context);
                 TextView textView = (TextView) view;
                 textView.setGravity(Gravity.CENTER);
 
-                if (viewType == VIEW_TYPE_ADVANCED) {
-                    textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, margin * 3.5f);
-                } else {
-                    textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, margin * 3.5f); //基于测试，3.5是合适的乘数，而3过小，4过大。
-                }
+                int min = Math.min(contentWidth, contentHeight);
+                textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, min / 2.2f);
+
 
                 if (viewType == VIEW_TYPE_OPERATOR) {
-                    background = R.drawable.drawable_background_operator;
+                    background = backgrounds[1];
                     textView.setTypeface(textView.getTypeface(), Typeface.BOLD);
                 } else {
-                    background = R.drawable.drawable_background_digit;
+                    background = backgrounds[0];
                 }
 
             } else {
                 view = new View(context);
             }
 
-            if (background > 0)
-                view.setBackground(ContextCompat.getDrawable(context, background));
-
-            GridLayoutManager.LayoutParams params = new GridLayoutManager.LayoutParams(size, size);
-            params.setMargins(margin, margin, margin, margin);
+            if (background != null) {
+                background = Objects.requireNonNull(background.getConstantState()).newDrawable().mutate();
+                view.setBackground(background);
+            }
+            GridLayoutManager.LayoutParams params = new GridLayoutManager.LayoutParams(contentWidth, contentHeight);
+            params.setMargins(horizontalMargin, verticalMargin, horizontalMargin, verticalMargin);
             view.setLayoutParams(params);
 
-            return new VH(view, perLength);
+            return new VH(view);
         }
     }
 }

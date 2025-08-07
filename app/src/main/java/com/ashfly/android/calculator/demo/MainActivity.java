@@ -1,24 +1,54 @@
 package com.ashfly.android.calculator.demo;
 
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.*;
-import static com.ashfly.android.calculator.demo.DigitAdapter.*;
+import static com.ashfly.android.calculator.demo.DigitAdapter.Item;
+import static com.ashfly.android.calculator.demo.DigitAdapter.OnItemClickListener;
+import static com.ashfly.android.calculator.demo.DigitAdapter.VIEW_TYPE_ADVANCED;
+import static com.ashfly.android.calculator.demo.DigitAdapter.VIEW_TYPE_DIGIT;
+import static com.ashfly.android.calculator.demo.DigitAdapter.VIEW_TYPE_OPERATOR;
+import static com.ashfly.android.calculator.demo.DigitAdapter.VIEW_TYPE_SPECIAL;
+import static com.ashfly.android.calculator.demo.ExpressionBuilder.ACCURACY_LIMIT;
+import static com.ashfly.android.calculator.demo.ExpressionBuilder.ADVANCED_OPERATORS;
+import static com.ashfly.android.calculator.demo.ExpressionBuilder.BASIC_OPERATORS;
+import static com.ashfly.android.calculator.demo.ExpressionBuilder.DIGIT_CHARS;
+import static com.ashfly.android.calculator.demo.ExpressionBuilder.EMPTY_CHAR;
+import static com.ashfly.android.calculator.demo.ExpressionBuilder.SEPARATE_CHARS;
+import static com.ashfly.android.calculator.demo.ExpressionBuilder.SUPERSCRIPT_SPAN;
+import static com.ashfly.android.calculator.demo.ExpressionBuilder.newPowItem;
+
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
+import android.os.Build;
+import android.os.Bundle;
+import android.text.Editable;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.SuperscriptSpan;
+import android.util.TypedValue;
+import android.view.View;
+import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.recyclerview.widget.*;
+import androidx.core.content.ContextCompat;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
-import android.graphics.*;
-import android.os.Bundle;
-import android.text.*;
-import android.text.style.*;
-import android.util.*;
-import android.view.*;
-import android.widget.*;
+import java.math.RoundingMode;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
 
-import java.math.*;
-import java.text.*;
-import java.util.*;
-
-/** @noinspection UnusedReturnValue*/
+/**
+ * @noinspection UnusedReturnValue
+ */
 public class MainActivity extends AppCompatActivity implements OnItemClickListener {
 
     private final NumberFormat resultFormat = NumberFormat.getNumberInstance();
@@ -44,58 +74,88 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             newPowItem("sin", "-1"), newPowItem("cos", "-1"), newPowItem("tan", "-1"),
             newPowItem("e", "x"), newPowItem("10", "x"), newPowItem("x", "2"));
     private final int[] INVIndexes = new int[]{5, 6, 7, 10, 11, 12};
-
+    Drawable digitalBackground, operatorBackground, specialBackground;
     private LinearLayout layout;
     private HorizontalScrollView scroll_expressions, scroll_result;
     private TextView tv_expressions, tv_result;
     private RecyclerView rv_digits;
     private boolean isRad, isFinalResult, isINV;
     private DigitAdapter adapter;
-
+    private int itemWidth, itemHeight;
     private int columns;
-    private int perLength;
+    private boolean initialized;
 
     private static int getStringNumLength(String text) {
         return (text.startsWith("+") || text.startsWith("-")) ? text.length() - 1 : text.length();
     }
 
-    @Override protected void onCreate(Bundle savedInstanceState) {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         initViews();
-        resizeViews();
-        initDigits();
+        layout.post(() -> {
+            initViewSizes();
+            initDrawables(itemWidth, itemHeight);
+            initDigits();
+        });
     }
 
-    private void resizeViews() {
-        DisplayMetrics displayMetrics = new DisplayMetrics();
-        getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
+    private void initDrawables(int width, int height) {
+        GradientDrawable baseShape = new GradientDrawable();
+        baseShape.setSize(width, height);
+        baseShape.setCornerRadius(Math.min(width, height) / 2f);
 
-        int width = displayMetrics.widthPixels;
-        int height = displayMetrics.heightPixels;
+        GradientDrawable special = (GradientDrawable) Objects.requireNonNull(baseShape.getConstantState()).newDrawable().mutate();
+        special.setColor(ContextCompat.getColor(this, R.color.background_special));
+        GradientDrawable digits = (GradientDrawable) baseShape.getConstantState().newDrawable().mutate();
+        digits.setColor(ContextCompat.getColor(this, R.color.background_digits));
+        GradientDrawable operator = (GradientDrawable) baseShape.getConstantState().newDrawable().mutate();
+        operator.setColor(ContextCompat.getColor(this, R.color.background_operators));
+
+
+        if (Build.VERSION.SDK_INT >= 21) {
+            TypedValue typedValue = new TypedValue();
+            getTheme().resolveAttribute(android.R.attr.colorControlHighlight, typedValue, true);
+            int rippleColor = typedValue.data;
+
+            digitalBackground = new RippleDrawable(ColorStateList.valueOf(rippleColor), digits, null);
+            specialBackground = new RippleDrawable(ColorStateList.valueOf(rippleColor), special, null);
+            operatorBackground = new RippleDrawable(ColorStateList.valueOf(rippleColor), operator, null);
+        } else {
+            GradientDrawable pressedDrawable = (GradientDrawable) baseShape.getConstantState().newDrawable().mutate();
+            pressedDrawable.setColor(0x10000000);
+
+            StateListDrawable stateListDrawable = new StateListDrawable();
+            stateListDrawable.addState(new int[]{android.R.attr.state_pressed}, pressedDrawable);
+            digitalBackground = Objects.requireNonNull(stateListDrawable.getConstantState()).newDrawable().mutate();
+            ((StateListDrawable) digitalBackground).addState(new int[0], digits);
+            operatorBackground = stateListDrawable.getConstantState().newDrawable().mutate();
+            ((StateListDrawable) operatorBackground).addState(new int[0], operator);
+            specialBackground = stateListDrawable.getConstantState().newDrawable().mutate();
+            ((StateListDrawable) specialBackground).addState(new int[0], special);
+        }
+    }
+
+    private void initViewSizes() {
+        int width = layout.getWidth();
+        int rvHeight = rv_digits.getHeight();
 
         int rows = 5;
         columns = 4;
 
-        perLength = width / columns;
-        int digitsHeight = perLength * rows;
-        LinearLayout.LayoutParams rvParams = (LinearLayout.LayoutParams) rv_digits.getLayoutParams();
-        rvParams.height = digitsHeight;
-        rv_digits.setLayoutParams(rvParams);
+        itemWidth = width / columns;
+        itemHeight = rvHeight / rows;
 
-        int tvsHeight = height - digitsHeight;
-        int tvHeight = tvsHeight / 2;
-        tv_expressions.setHeight(tvHeight);
-        scroll_expressions.setMinimumHeight(tvHeight);
-        tv_expressions.setTextSize(TypedValue.COMPLEX_UNIT_PX, tvHeight / 2.5f);
+        tv_expressions.setTextSize(TypedValue.COMPLEX_UNIT_PX, tv_expressions.getHeight() / 3f);
+        tv_result.setTextSize(TypedValue.COMPLEX_UNIT_PX, tv_result.getHeight() / 3f);
 
-        tv_result.setHeight(tvHeight);
-        scroll_expressions.setMinimumHeight(tvHeight);
-        tv_result.setTextSize(TypedValue.COMPLEX_UNIT_PX, tvHeight / 2.5f);
-        tv_result.setTextColor(Color.GRAY);
-
+        if (initialized) {
+            adapter.setItemSize(itemWidth, itemHeight);
+        }
     }
+
 
     private void initViews() {
         layout = findViewById(R.id.layout_main);
@@ -109,22 +169,29 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
 
     private void initDigits() {
         tv_result.setText("0");
+        tv_result.setTextColor(Color.GRAY);
+
         scroll_expressions.setHorizontalScrollBarEnabled(false);
         scroll_result.setHorizontalScrollBarEnabled(false);
 
         rv_digits.setLayoutManager(new GridLayoutManager(this, columns));
 
-        adapter = new DigitAdapter(perLength, normalItems);
+        adapter = new DigitAdapter(itemWidth, itemHeight, normalItems);
+
         adapter.setOnItemClickListener(this);
+        adapter.setBackgrounds(digitalBackground, operatorBackground, specialBackground);
         rv_digits.setAdapter(adapter);
 
         originalNumFormat.setMaximumFractionDigits(ACCURACY_LIMIT);
         resultFormat.setGroupingUsed(true);
         resultFormat.setMaximumFractionDigits(ACCURACY_LIMIT);
         resultFormat.setRoundingMode(RoundingMode.HALF_UP);
+
+        initialized = true;
     }
 
-    @Override public void onClick(Item item) {
+    @Override
+    public void onClick(Item item) {
         int viewType = item.viewType;
         switch (viewType) {
             case VIEW_TYPE_DIGIT:
@@ -390,10 +457,20 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     }
 
     private void performCalculate() {
+        Double result = null;
         try {
-            double result = expressionBuilder.calculate(isRad);
+            result = expressionBuilder.calculate(isRad);
+        } catch (ArithmeticException e) {
+            String message = e.getMessage();
+            if (message == null)
+                tv_result.setText(R.string.err);
+            else
+                tv_result.setText(Integer.parseInt(message));
+            tv_result.setTextColor(Color.RED);
+        }
 
-            //超出精度限制则使用科学计数法。使用originalFormat关闭原有的科学计数法以免影响长度判断。
+        //超出精度限制则使用科学计数法。使用originalFormat关闭原有的科学计数法以免影响长度判断。
+        if (result != null) {
             String original = originalNumFormat.format(result);
             if (original.equals("0")) {
                 if (result == 0)
@@ -413,13 +490,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
 
             tv_result.setTextColor(Color.GRAY);
             scroll_result.post(() -> scroll_result.fullScroll(View.FOCUS_LEFT));
-        } catch (ArithmeticException e) {
-            String message = e.getMessage();
-            if (message == null)
-                tv_result.setText(R.string.err);
-            else
-                tv_result.setText(Integer.parseInt(message));
-            tv_result.setTextColor(Color.RED);
         }
+
     }
 }
