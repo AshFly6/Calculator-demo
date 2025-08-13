@@ -1,7 +1,9 @@
 <resources>
     <string name="app_name">计算器（Demo）</string>
     <string name="cannot_divide_by_zero">不能除以0</string>
+    <string name="NaN">无效或未定义</string>
     <string name="beyond_define_domain">超出函数定义域</string>
     <string name="err">出错</string>
     <string name="value_too_gigantic">值过于大或过于小</string>
+    <string name="formate_wrong">格式错误</string>
 </resources>

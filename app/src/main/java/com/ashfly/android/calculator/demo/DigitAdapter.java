@@ -4,6 +4,10 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.SuperscriptSpan;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -26,6 +30,10 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
     public static final int VIEW_TYPE_SPECIAL = 3;
     public static final int VIEW_TYPE_ADVANCED = 4;
     public static final int VIEW_TYPE_EMPTY = 0;
+
+    public static final SuperscriptSpan SUPERSCRIPT_SPAN = new SuperscriptSpan();
+    public static final RelativeSizeSpan RELATIVE_SIZE_SPAN = new RelativeSizeSpan(0.5f);
+
     private final List<Item> list = new ArrayList<>();
     private int width, height;
     private OnItemClickListener onItemClickListener;
@@ -69,21 +77,30 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
 
     public void setItems(int[] indexes, List<Item> list) {
         int size = list.size();
-        int length = indexes.length;
+        int thisSize = this.list.size();
 
-        if (length == size) {
+        if (indexes.length == size) {
             int i = 0;
             for (int index : indexes) {
+                if (index < 0 || index >= thisSize)
+                    continue;
+
                 this.list.set(index, list.get(i));
                 notifyItemChanged(index);
                 i++;
             }
-        } else if (this.list.size() == size) {
+        } else if (thisSize == size) {
             for (int index : indexes) {
+                if (index < 0 || index >= thisSize)
+                    continue;
+
                 this.list.set(index, list.get(index));
                 notifyItemChanged(index);
             }
+        } else {
+            throw new IllegalStateException();
         }
+
     }
 
 
@@ -146,6 +163,7 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
 
     public static class Item {
 
+        public static final Item EMPTY_ITEM = new Item();
         public final int viewType;
         public char digit;
         public String operator;
@@ -174,6 +192,15 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
 
         public Item() {
             viewType = VIEW_TYPE_EMPTY;
+        }
+
+        public static Item newPowItem(String base, String exponent) {
+            SpannableString pow = new SpannableString(base + exponent);
+            int length = base.length();
+            int totalLength = pow.length();
+            pow.setSpan(SUPERSCRIPT_SPAN, length, totalLength, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            pow.setSpan(RELATIVE_SIZE_SPAN, length, totalLength, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            return new Item(pow);
         }
     }
 
@@ -211,7 +238,9 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
             if (viewType == VIEW_TYPE_SPECIAL) {
                 view = new ImageView(context);
                 ((ImageView) view).setScaleType(ImageView.ScaleType.FIT_CENTER);
-                view.setPadding(horizontalMargin * 2, verticalMargin * 2, horizontalMargin * 2, verticalMargin * 2);
+                int horizontalPadding = contentWidth / 4;
+                int verticalPadding = contentHeight / 4;
+                view.setPadding(horizontalPadding, verticalPadding , horizontalPadding, verticalPadding);
                 background = backgrounds[2];
             } else if (viewType == VIEW_TYPE_DIGIT || viewType == VIEW_TYPE_OPERATOR || viewType == VIEW_TYPE_ADVANCED) {
                 view = new TextView(context);
@@ -243,5 +272,7 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
 
             return new VH(view);
         }
+
+
     }
 }

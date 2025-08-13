@@ -1,41 +1,70 @@
 package com.ashfly.android.calculator.demo;
 
-import android.text.*;
-import android.text.style.*;
-import android.util.*;
+import android.os.Parcel;
+import android.os.Parcelable;
+import android.util.Log;
 
-import androidx.annotation.*;
+import androidx.annotation.NonNull;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * @noinspection BooleanMethodIsAlwaysInverted
+ * 构造和计算算式
  */
-public class ExpressionBuilder {
+public class EquationBuilder implements Parcelable {
 
     public static final List<Character> DIGIT_CHARS = Arrays.asList('1', '2', '3', '4', '5', '6', '7', '8', '9', '0');
 
     public static final List<Character> BASIC_OPERATORS = Arrays.asList('+', '-', '×', '÷', '^');
-    public static final List<Character> ADVANCED_OPERATORS = Arrays.asList('!', '√', '%');
+    public static final List<Character> ADVANCED_OPERATORS = Arrays.asList('!', '%');
 
     public static final List<Character> SEPARATE_CHARS = Arrays.asList('(', ')', 'e', 'π'); //这些字符总会独占一个位置
-    public static final List<String> MATH_FUNCTIONS = Arrays.asList("sin", "cos", "tan", "ln", "lg", "exp", "sin-1", "cos-1", "tan-1");
+    public static final List<String> MATH_FUNCTIONS = Arrays.asList("sin", "cos", "tan", "ln", "lg", "exp", "sin-1", "cos-1", "tan-1", "√");
 
     public static final char EMPTY_CHAR = '\u0000';
     public static final String TAG = "ExpressionBuilder";
-    public static final double EPSILON = 1e-15;
-    public static final int ACCURACY_LIMIT = 15;
-    public static final SuperscriptSpan SUPERSCRIPT_SPAN = new SuperscriptSpan();
-    public static final RelativeSizeSpan RELATIVE_SIZE_SPAN = new RelativeSizeSpan(0.5f);
+    public static final double EPSILON = 1e-10;
+    public static final int MAX_DIGIT_LENGTH = 15;
 
+    public static final Creator<EquationBuilder> CREATOR = new Creator<EquationBuilder>() {
+        @Override
+        public EquationBuilder createFromParcel(Parcel in) {
+            return new EquationBuilder(in);
+        }
+
+        @Override
+        public EquationBuilder[] newArray(int size) {
+            return new EquationBuilder[size];
+        }
+    };
     /**
      * numberBuilders:  0      1       2       3       4      5       ...
      * operators:           0      1       2       3       4       ...
      */
     private final List<StringBuilder> numberBuilders = new ArrayList<>();
     private final List<Character> operators = new ArrayList<>();
-
     private int index = 0, unmatchedLeftBracket = 0;
+
+    public EquationBuilder() {
+    }
+
+    protected EquationBuilder(Parcel in) {
+        List<String> list = new ArrayList<>();
+        in.readStringList(list);
+        for (String s : list)
+            numberBuilders.add(new StringBuilder(s));
+
+        list.clear();
+        in.readStringList(list);
+        for (String s : list)
+            operators.add(s.charAt(0));
+
+        index = in.readInt();
+        unmatchedLeftBracket = in.readInt();
+    }
 
     private static double parseNumber(String num) {
         if (num.equals("π"))
@@ -43,14 +72,9 @@ public class ExpressionBuilder {
         if (num.equals("e"))
             return Math.E;
 
-        for (char c : num.toCharArray()) {
-            if (DIGIT_CHARS.contains(c)) {
-                try {
-                    return Double.parseDouble(num);
-                } catch (NumberFormatException e) {
-                    break;
-                }
-            }
+        try {
+            return Double.parseDouble(num);
+        } catch (NumberFormatException ignored) {
         }
 
         if (num.startsWith("+"))
@@ -60,7 +84,9 @@ public class ExpressionBuilder {
         return Double.NaN;
     }
 
-    /** @noinspection SameParameterValue*/
+    /**
+     * @noinspection SameParameterValue
+     */
     private static <E> int indexOfRange(List<E> list, E element, int start) {
         int end = list.size();
         if (element == null)
@@ -76,45 +102,12 @@ public class ExpressionBuilder {
         return -1;
     }
 
-    private static double factorial(double number) {
-        if (number < 0)
-            throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
-        if (number == 0)
-            return 1;
-
-        if (Math.floor(number) != number)
-            throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
-
-        double result = number;
-        for (double i = number - 1; i > 0; i--) {
-            result = result * i;
-            checkInfinite(result);
-        }
-        return result;
-    }
-
-    private static void checkInfinite(double thisNum) {
+    private static void checkInfiniteAndNaN(double thisNum) {
         if (Double.isInfinite(thisNum))
-            throw new ArithmeticException(String.valueOf(R.string.value_too_gigantic));
-    }
-
-    private static double convertInfinityToNormal(double origin) {
-        if (origin < 0)
-            return - 1;
-        return 1;
-    }
-
-    private static CharSequence makePowExpression(String base, String exponent) {
-        SpannableString pow = new SpannableString(base + exponent);
-        int length = base.length();
-        int totalLength = pow.length();
-        pow.setSpan(SUPERSCRIPT_SPAN, length, totalLength, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        pow.setSpan(RELATIVE_SIZE_SPAN, length, totalLength, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        return pow;
-    }
-
-    public static DigitAdapter.Item newPowItem(String base, String exponent) {
-        return new DigitAdapter.Item(makePowExpression(base, exponent));
+            throw new CalculateException("Too gigantic!", R.string.value_too_gigantic);
+        if (Double.isNaN(thisNum)) {
+            throw new CalculateException("Occur NaN!", R.string.NaN);
+        }
     }
 
     public boolean appendChar(char c) {
@@ -131,14 +124,14 @@ public class ExpressionBuilder {
 
         if (builder.length() == 1) {
             char firstChar = builder.charAt(0);
-            if (ADVANCED_OPERATORS.contains(firstChar) || SEPARATE_CHARS.contains(firstChar))
+            if (firstChar == '√' || ADVANCED_OPERATORS.contains(firstChar) || SEPARATE_CHARS.contains(firstChar))
                 builder = createNewBuilder(EMPTY_CHAR);
         }
 
         int length = builder.length();
         if (length > 1 && (builder.charAt(0) == '+' || builder.charAt(0) == '-'))
             length--;
-        if (length >= ACCURACY_LIMIT)
+        if (length >= MAX_DIGIT_LENGTH)
             return false;
 
         if (DIGIT_CHARS.contains(c))
@@ -309,6 +302,7 @@ public class ExpressionBuilder {
         return false;
     }
 
+
     private void splitNegative(StringBuilder builder) {
         String s = builder.toString().replace("-", "");
         builder.delete(1, builder.length());
@@ -372,99 +366,100 @@ public class ExpressionBuilder {
     }
 
     public double calculate(boolean isRad) {
-        int size = numberBuilders.size();
+        int size = this.numberBuilders.size();
         if (size == 0)
             return 0;
 
         tryGetCurrentBuilder();
 
-        List<String> list = new ArrayList<>(size);
-        for (StringBuilder builder : numberBuilders) {
-            list.add(builder.toString());
+        //将numbers和操作符复制一份，不影响外部
+        List<String> numbers = new ArrayList<>(size);
+        for (StringBuilder builder : this.numberBuilders) {
+            numbers.add(builder.toString());
         }
 
+        //把末尾未闭合的符号删掉
         List<Character> operators = new ArrayList<>(this.operators);
         for (int i = size - 1; i >= 0; i--) {
-            String number = list.get(i);
-            if (!number.equals("") && !number.equals("(") && !number.equals("+") && !number.equals("-") &&
+            String number = numbers.get(i);
+            if (!number.isEmpty() && !number.equals("(") && !number.equals("+") && !number.equals("-") &&
                     !number.equals("^") && !number.equals("√") && !MATH_FUNCTIONS.contains(number)) {
                 break;
             }
-            list.remove(i);
-            if (i > 0)
-                operators.remove(i - 1);
             size--;
+            numbers.remove(i);
+            if (i > 0) {
+                operators.remove(i - 1);
+            }
         }
 
         if (size == 0)
             return 0;
 
-        List<Double> numbers = new ArrayList<>();
-        List<Character> numberOperators = new ArrayList<>();
+        double finalResult;
 
-        double numberResult;
-
-        int scopeStart, scopeEnd;
         boolean hasLeftBracket, hasRightBracket;
+        List<Double> scopeNumbers = new ArrayList<>();
+        List<Character> scopeOperators = new ArrayList<>();
+        int scopeStart, scopeEnd;
+
         while (true) {
-            //进入了一对括号
-            scopeStart = list.lastIndexOf("(") + 1;
-            hasLeftBracket = scopeStart > 0;
+            {
+                //进入了一对括号
+                scopeStart = numbers.lastIndexOf("(") + 1;
+                hasLeftBracket = scopeStart > 0;
 
-            scopeEnd = indexOfRange(list, ")", scopeStart) - 1;
-            hasRightBracket = scopeEnd > 0;
-            if (!hasRightBracket)
-                scopeEnd = list.size() - 1;
+                scopeEnd = indexOfRange(numbers, ")", scopeStart) - 1;
+                hasRightBracket = scopeEnd > 0;
+                if (!hasRightBracket)
+                    scopeEnd = numbers.size() - 1;
 
-            //将括号里的数字和运算符提取出来
-            numbers.clear();
-            numberOperators.clear();
+                scopeNumbers.clear();
+                scopeOperators.clear();
+            }
 
-            for (int indexEntirely = scopeStart; indexEntirely <= scopeEnd; indexEntirely++) {
-                String num = list.get(indexEntirely);
+            //处理函数
+            while (true) {
 
-                if (indexEntirely != scopeEnd)
-                    numberOperators.add(operators.get(indexEntirely));
+                int functionStart = -1;
+                int functionEnd = -1;
+                for (int globalIndex = scopeStart; globalIndex <= scopeEnd; globalIndex++) {
+                    String number = numbers.get(globalIndex);
 
-                int indexInsideScope = indexEntirely - scopeStart;
+                    if (functionStart < 0) {
+                        if (MATH_FUNCTIONS.contains(number)) {
+                            functionStart = globalIndex;
+                        }
+                    } else {
+                        double thisNum = parseNumber(number);
+                        if (!Double.isNaN(thisNum)) {
+                            functionEnd = globalIndex;
+                            break;
+                        }
+                    }
 
-                if (num.equals("%") || num.equals("!")) {
-                    // 1    %   2   ->    0.01   2
-                    //   空   +                +
+                }
 
-                    list.remove(indexEntirely);
+                if (functionStart >= 0 && functionEnd < 0)
+                    throw new CalculateException("Format error", R.string.formate_wrong);
 
-                    indexEntirely--;
-                    operators.remove(indexEntirely);
+                if (functionStart < 0)
+                    break;
+
+                for (int globalIndex = functionEnd; globalIndex > functionStart; globalIndex--) {
+                    double thisNum = parseNumber(numbers.get(globalIndex));
+                    String previousNum = numbers.get(globalIndex - 1);
+
+                    if (!MATH_FUNCTIONS.contains(previousNum))
+                        throw new CalculateException(String.format("Cannot calculate %s%s", previousNum, thisNum), R.string.formate_wrong);
+
                     scopeEnd--;
 
-                    indexInsideScope--;
-                    numberOperators.remove(indexInsideScope);
-
-                    double thisNum = numbers.get(indexInsideScope);
-                    thisNum = num.equals("%") ? thisNum / 100 : factorial(thisNum);
-
-                    checkInfinite(thisNum);
-
-                    numbers.set(indexInsideScope, thisNum);
-                    list.set(indexEntirely, String.valueOf(thisNum));
-
-                } else if (num.equals("√") || MATH_FUNCTIONS.contains(num)) {
-                    //cos    180 ->  -1
-                    //    空
-                    list.remove(indexEntirely);
-                    operators.remove(indexEntirely);
-                    numberOperators.remove(indexInsideScope);
-
-                    scopeEnd--;
-
-                    double thisNum = parseNumber(list.get(indexEntirely));
-
-                    if (num.contains("-1")) {
+                    if (previousNum.contains("-1")) {
                         if (thisNum > 1 || thisNum < -1)
-                            throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
+                            throw new CalculateException(String.format("Cannot calculate \"%s%f!\"", previousNum, thisNum), R.string.beyond_define_domain);
 
-                        switch (num) {
+                        switch (previousNum) {
                             case "sin-1":
                                 thisNum = Math.asin(thisNum);
                                 break;
@@ -481,15 +476,17 @@ public class ExpressionBuilder {
                         if (!isRad)
                             thisNum = Math.toDegrees(thisNum);
 
-                    } else if (num.length() == 1 || num.startsWith("l")) {
+                    } else if (previousNum.equals("√")) {
+                        if (thisNum < 0)
+                            throw new CalculateException(String.format("Cannot calculate \"%s%f!\"", previousNum, thisNum), R.string.beyond_define_domain);
+
+                        thisNum = Math.sqrt(thisNum);
+
+                    } else if (previousNum.startsWith("l")) {
                         if (thisNum <= 0)
-                            throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
+                            throw new CalculateException(String.format("Cannot calculate \"%s%f!\"", previousNum, thisNum), R.string.beyond_define_domain);
 
-                        switch (num) {
-                            case "√":
-                                thisNum = Math.sqrt(thisNum);
-                                break;
-
+                        switch (previousNum) {
                             case "ln":
                                 thisNum = Math.log(thisNum);
                                 break;
@@ -500,9 +497,10 @@ public class ExpressionBuilder {
                         }
 
                     } else {
-                        switch (num) {
+                        switch (previousNum) {
                             case "exp":
                                 thisNum = Math.exp(thisNum);
+                                break;
 
                             case "sin":
                                 thisNum = Math.sin(isRad ? thisNum : Math.toRadians(thisNum));
@@ -515,8 +513,8 @@ public class ExpressionBuilder {
                             case "tan":
                                 if (!isRad)
                                     thisNum = Math.toRadians(thisNum);
-                                if ((thisNum - Math.PI / 2) % Math.PI == 0)
-                                    throw new ArithmeticException(String.valueOf(R.string.beyond_define_domain));
+                                if (Math.abs(Math.cos(thisNum)) < EPSILON)
+                                    throw new CalculateException(String.format("Cannot calculate \"%s%f!\"", previousNum, thisNum), R.string.beyond_define_domain);
 
                                 thisNum = Math.tan(thisNum);
                                 break;
@@ -524,90 +522,162 @@ public class ExpressionBuilder {
                         }
                     }
 
-                    double floor = Math.floor(thisNum);
-                    if (Math.abs(floor - thisNum) < EPSILON)
-                        thisNum = floor;
+                    checkInfiniteAndNaN(thisNum);
 
-                    list.set(indexEntirely, String.valueOf(thisNum));
-                    numbers.add(thisNum);
-                    if (indexEntirely != scopeEnd)
-                        numberOperators.add(operators.get(indexEntirely));
-
-                } else {
-                    numbers.add(parseNumber(num));
+                    //globalIndex-1 globalIndex
+                    //cos            180         ->  -1
+                    //        空
+                    numbers.set(globalIndex - 1, String.valueOf(thisNum));
+                    numbers.remove(globalIndex);
+                    operators.remove(globalIndex - 1);
                 }
             }
 
-            //先乘方，再乘法、除法
-            boolean hasPow = numberOperators.contains('^');
-            for (int i = 0; i < numberOperators.size(); i++) {
 
-                char operator = numberOperators.get(i);
+            for (int globalIndex = scopeStart; globalIndex <= scopeEnd; globalIndex++) {
+                String number = numbers.get(globalIndex);
+                int scopeIndex = globalIndex - scopeStart;
+
+                if (globalIndex != scopeEnd)
+                    scopeOperators.add(operators.get(globalIndex));
+
+                if ((!number.equals("%") && !number.equals("!"))) {
+                    double parseNumber = parseNumber(number);
+                    if (Double.isNaN(parseNumber))
+                        throw new CalculateException("Format error", R.string.formate_wrong);
+                    scopeNumbers.add(parseNumber);
+                } else {
+                    // 1    %   2   ->    0.01   2
+                    //   空   +                +
+
+                    numbers.remove(globalIndex);
+
+                    globalIndex--;
+                    scopeIndex--;
+
+                    operators.remove(globalIndex);
+                    scopeOperators.remove(scopeIndex);
+
+                    scopeEnd--;
+
+                    double thisNum = scopeNumbers.get(scopeIndex);
+                    if (number.equals("%")) {
+                        thisNum = thisNum / 100;
+                    } else {
+                        if (thisNum < 0)
+                            throw new CalculateException(String.format("Cannot calculate \"%f!\"", thisNum), R.string.beyond_define_domain);
+                        double result = thisNum;
+                        if (thisNum == 0)
+                            result = 1;
+                        else {
+                            if (Math.floor(thisNum) != thisNum)
+                                throw new CalculateException(String.format("Cannot calculate \"%f!\"", thisNum), R.string.beyond_define_domain);
+
+                            for (long i = (long) (thisNum - 1); i > 0; i--) {
+                                result = result * i;
+                                checkInfiniteAndNaN(result);
+                            }
+                        }
+                        thisNum = result;
+                    }
+
+                    checkInfiniteAndNaN(thisNum);
+
+                    scopeNumbers.set(scopeIndex, thisNum);
+                    numbers.set(globalIndex, String.valueOf(thisNum));
+                }
+            }
+
+
+            //先乘方
+            //2    3    2     ->      2     9    ->    512
+            //  ^    ^                   ^
+            while (scopeOperators.contains('^')) {
+                for (int scopeIndex = scopeOperators.size() - 1; scopeIndex >= 0; scopeIndex--) {
+                    char operator = scopeOperators.get(scopeIndex);
+                    if (operator == '^') {
+                        double thisNumber = scopeNumbers.get(scopeIndex);
+                        double nextNumber = scopeNumbers.get(scopeIndex + 1);
+
+                        if (Double.isInfinite(thisNumber))
+                            thisNumber = thisNumber > 0 ? 1 : -1;
+                        if (Double.isInfinite(nextNumber))
+                            nextNumber = nextNumber > 0 ? 1 : -1;
+
+                        double value = thisNumber == 0 && nextNumber == 0 ? Double.NaN :
+                                Math.pow(thisNumber, nextNumber);
+                        checkInfiniteAndNaN(value);
+
+                        scopeNumbers.set(scopeIndex, value);
+                        scopeNumbers.remove(scopeIndex + 1);
+                        scopeOperators.remove(scopeIndex);
+                    }
+                }
+
+            }
+
+            //再乘除
+            for (int i = 0; i < scopeOperators.size(); i++) {
+
+                char operator = scopeOperators.get(i);
                 if (operator == EMPTY_CHAR)
                     operator = '×';
-                if (hasPow ? operator == '^' :
-                        (operator == '×' || operator == '÷')) {
-                    double thisNumber = numbers.get(i);
-                    double nextNumber = numbers.get(i + 1);
+                if (operator == '×' || operator == '÷') {
+                    double thisNumber = scopeNumbers.get(i);
+                    double nextNumber = scopeNumbers.get(i + 1);
 
                     if (Double.isInfinite(thisNumber))
-                        thisNumber = convertInfinityToNormal(thisNumber);
+                        thisNumber = thisNumber > 0 ? 1 : -1;
                     if (Double.isInfinite(nextNumber))
-                        nextNumber = convertInfinityToNormal(nextNumber);
+                        nextNumber = nextNumber > 0 ? 1 : -1;
 
                     double value;
-                    if (operator == '^')
-                        value = Math.pow(thisNumber, nextNumber);
-                    else if (operator == '×') {
+                    if (operator == '×') {
                         value = thisNumber * nextNumber;
                     } else {
                         if (nextNumber == 0)
-                            throw new ArithmeticException(String.valueOf(R.string.cannot_divide_by_zero));
+                            throw new CalculateException(String.format("Cannot calculate \"%f%s%f!\"", thisNumber, operator, nextNumber), R.string.cannot_divide_by_zero);
                         value = thisNumber / nextNumber;
                     }
 
-                    checkInfinite(value);
+                    checkInfiniteAndNaN(value);
 
-                    numbers.set(i, value);
-                    numbers.remove(i + 1);
-                    numberOperators.remove(i);
+                    scopeNumbers.set(i, value);
+                    scopeNumbers.remove(i + 1);
+                    scopeOperators.remove(i);
                     i--;
                 }
 
-                if (i == numberOperators.size() - 1 && hasPow) {
-                    hasPow = false;
-                    i = -1;
-                }
             }
 
-            //再加减
+            //最后加减
             double result = 0;
 
-            if (numbers.size() > 0) {
-                result = numbers.get(0);
-                for (int i = 0; i < numberOperators.size(); i++) {
-                    char operator = numberOperators.get(i);
-                    result = operator == '+' ? result + numbers.get(i + 1) : result - numbers.get(i + 1);
-                    checkInfinite(result);
+            if (!scopeNumbers.isEmpty()) {
+                result = scopeNumbers.get(0);
+                for (int i = 0; i < scopeOperators.size(); i++) {
+                    char operator = scopeOperators.get(i);
+                    result = operator == '+' ? result + scopeNumbers.get(i + 1) : result - scopeNumbers.get(i + 1);
+                    checkInfiniteAndNaN(result);
                 }
             }
 
             //将最后的结果放回，并删除多余位置
-            checkInfinite(result);
-            if (scopeStart < list.size())
-                list.set(scopeStart, String.valueOf(result));
+            checkInfiniteAndNaN(result);
+            if (scopeStart < numbers.size())
+                numbers.set(scopeStart, String.valueOf(result));
 
-            numberResult = result;
+            finalResult = result;
 
             //删掉右括号
             if (hasRightBracket) {
-                list.remove(scopeEnd + 1);
+                numbers.remove(scopeEnd + 1);
                 operators.remove(scopeEnd);
             }
 
             //删掉括号里的内容
             for (int i = scopeStart + 1; i <= scopeEnd; i++) {
-                list.remove(i);
+                numbers.remove(i);
                 operators.remove(i - 1);
                 i--;
                 scopeEnd--;
@@ -618,11 +688,11 @@ public class ExpressionBuilder {
                 break;
 
             //删掉左括号
-            list.remove(scopeStart - 1);
+            numbers.remove(scopeStart - 1);
             operators.remove(scopeStart - 1);
         }
 
-        return numberResult;
+        return finalResult;
     }
 
     public double getCurrentNumber() {
@@ -654,7 +724,14 @@ public class ExpressionBuilder {
         return tryGetCurrentBuilder();
     }
 
-    @NonNull @Override public String toString() {
+    @NonNull
+    @Override
+    public String toString() {
+        return build();
+    }
+
+    @NonNull
+    public String build() {
         StringBuilder builder = new StringBuilder();
         int size = numberBuilders.size();
         for (int i = 0; i < size; i++) {
@@ -666,5 +743,39 @@ public class ExpressionBuilder {
             }
         }
         return builder.toString();
+    }
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(@NonNull Parcel dest, int flags) {
+        List<String> list = new ArrayList<>();
+        for (StringBuilder builder : numberBuilders) {
+            if (builder != null)
+                list.add(builder.toString());
+        }
+        dest.writeStringList(list);
+
+        list.clear();
+        for (Character character : operators) {
+            if (character != null)
+                list.add(character.toString());
+        }
+
+        dest.writeStringList(list);
+        dest.writeInt(index);
+        dest.writeInt(unmatchedLeftBracket);
+    }
+
+    public static final class CalculateException extends ArithmeticException {
+        int textResourceId;
+
+        public CalculateException(String message, int textResourceId) {
+            super(message);
+            this.textResourceId = textResourceId;
+        }
     }
 }

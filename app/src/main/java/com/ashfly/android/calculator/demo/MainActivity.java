@@ -1,21 +1,21 @@
 package com.ashfly.android.calculator.demo;
 
 import static com.ashfly.android.calculator.demo.DigitAdapter.Item;
+import static com.ashfly.android.calculator.demo.DigitAdapter.Item.EMPTY_ITEM;
 import static com.ashfly.android.calculator.demo.DigitAdapter.OnItemClickListener;
+import static com.ashfly.android.calculator.demo.DigitAdapter.SUPERSCRIPT_SPAN;
 import static com.ashfly.android.calculator.demo.DigitAdapter.VIEW_TYPE_ADVANCED;
 import static com.ashfly.android.calculator.demo.DigitAdapter.VIEW_TYPE_DIGIT;
 import static com.ashfly.android.calculator.demo.DigitAdapter.VIEW_TYPE_OPERATOR;
 import static com.ashfly.android.calculator.demo.DigitAdapter.VIEW_TYPE_SPECIAL;
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.ACCURACY_LIMIT;
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.ADVANCED_OPERATORS;
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.BASIC_OPERATORS;
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.DIGIT_CHARS;
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.EMPTY_CHAR;
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.SEPARATE_CHARS;
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.SUPERSCRIPT_SPAN;
-import static com.ashfly.android.calculator.demo.ExpressionBuilder.newPowItem;
+import static com.ashfly.android.calculator.demo.EquationBuilder.ADVANCED_OPERATORS;
+import static com.ashfly.android.calculator.demo.EquationBuilder.BASIC_OPERATORS;
+import static com.ashfly.android.calculator.demo.EquationBuilder.DIGIT_CHARS;
+import static com.ashfly.android.calculator.demo.EquationBuilder.EMPTY_CHAR;
+import static com.ashfly.android.calculator.demo.EquationBuilder.SEPARATE_CHARS;
 
 import android.content.res.ColorStateList;
+import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -29,19 +29,26 @@ import android.text.Spanned;
 import android.text.style.RelativeSizeSpan;
 import android.text.style.SuperscriptSpan;
 import android.util.TypedValue;
+import android.view.DisplayCutout;
 import android.view.View;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -52,11 +59,8 @@ import java.util.Objects;
 public class MainActivity extends AppCompatActivity implements OnItemClickListener {
 
     private final NumberFormat resultFormat = NumberFormat.getNumberInstance();
-    private final NumberFormat originalNumFormat = new DecimalFormat("###0");
+    private final NumberFormat originNumFormat = new DecimalFormat("###0");
     private final NumberFormat expressionFormat = NumberFormat.getNumberInstance();
-
-    private final ExpressionBuilder expressionBuilder = new ExpressionBuilder();
-
     private final List<Item> normalItems = Arrays.asList(
             new Item(R.drawable.ic_expand_more), new Item(R.drawable.ic_backspace), new Item("%"), new Item("÷"),
             new Item('7'), new Item('8'), new Item('9'), new Item("×"),
@@ -64,17 +68,19 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             new Item('3'), new Item('2'), new Item('1'), new Item("+"),
             new Item('0'), new Item('.'), new Item("( )"), new Item("="));
     private final Item RADItem = new Item("RAD"), DEGItem = new Item("DEG");
-
     private final List<Item> advancedItems = Arrays.asList(
-            new Item(R.drawable.ic_expand_less), new Item(R.drawable.ic_backspace), new Item("AC"), new Item(),
+            new Item(R.drawable.ic_expand_less), new Item(R.drawable.ic_backspace), new Item("AC"), EMPTY_ITEM,
             DEGItem, new Item((CharSequence) "sin"), new Item((CharSequence) "cos"), new Item((CharSequence) "tan"),
             new Item("INV"), new Item('e'), new Item((CharSequence) "ln"), new Item((CharSequence) "lg"),
             new Item((CharSequence) "√"), new Item('π'), new Item((CharSequence) "^"), new Item((CharSequence) "!"));
     private final List<Item> INVItems = Arrays.asList(
-            newPowItem("sin", "-1"), newPowItem("cos", "-1"), newPowItem("tan", "-1"),
-            newPowItem("e", "x"), newPowItem("10", "x"), newPowItem("x", "2"));
-    private final int[] INVIndexes = new int[]{5, 6, 7, 10, 11, 12};
-    Drawable digitalBackground, operatorBackground, specialBackground;
+            Item.newPowItem("sin", "-1"), Item.newPowItem("cos", "-1"), Item.newPowItem("tan", "-1"),
+            Item.newPowItem("e", "x"), Item.newPowItem("10", "x"), Item.newPowItem("x", "2"));
+    private final List<Item> combinedItems, functionItems;
+    private final int[] functionIndexes = new int[]{5, 6, 7, 10, 11, 12}; //因为布局是固定的，所以提前定义好索引，避免动态查询
+    private final int[] functionIndexesCombined = new int[]{9, 10, 11, 18, 19, 24};
+    private EquationBuilder expressionBuilder = new EquationBuilder();
+    private Drawable digitalBackground, operatorBackground, specialBackground;
     private LinearLayout layout;
     private HorizontalScrollView scroll_expressions, scroll_result;
     private TextView tv_expressions, tv_result;
@@ -82,8 +88,48 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     private boolean isRad, isFinalResult, isINV;
     private DigitAdapter adapter;
     private int itemWidth, itemHeight;
-    private int columns;
+    private boolean combinedLayoutStyle;
     private boolean initialized;
+    private boolean isAdvancedOpen;
+    private View spacer_top;
+
+    public MainActivity() {
+        combinedItems = new ArrayList<>();
+
+        //row 0
+        for (int i = 0; i <= 3; i++) {
+            combinedItems.add(EMPTY_ITEM);
+        }
+        combinedItems.add(advancedItems.get(2));
+        combinedItems.add(normalItems.get(1));
+        combinedItems.add(normalItems.get(2));
+        combinedItems.add(normalItems.get(3));
+
+        //row 1~3
+        for (int rows = 1; rows < 4; rows++) {
+            for (int columns = 0; columns < 8; columns++) {
+                if (columns <= 3) {
+                    combinedItems.add(advancedItems.get(rows * 4 + columns));
+                } else {
+                    combinedItems.add(normalItems.get(rows * 4 + columns - 4));
+                }
+            }
+        }
+
+        //row 4
+        for (int i = 0; i <= 3; i++) {
+            combinedItems.add(EMPTY_ITEM);
+        }
+        combinedItems.add(normalItems.get(16));
+        combinedItems.add(normalItems.get(17));
+        combinedItems.add(normalItems.get(18));
+        combinedItems.add(normalItems.get(19));
+
+        functionItems = new ArrayList<>();
+        for (int index : functionIndexes) {
+            functionItems.add(advancedItems.get(index));
+        }
+    }
 
     private static int getStringNumLength(String text) {
         return (text.startsWith("+") || text.startsWith("-")) ? text.length() - 1 : text.length();
@@ -92,14 +138,54 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        enableEdgeToEdge();
         setContentView(R.layout.activity_main);
 
         initViews();
+        initEdgeToEdge();
         layout.post(() -> {
             initViewSizes();
             initDrawables(itemWidth, itemHeight);
             initDigits();
+            postRestoreInstanceState(savedInstanceState);
         });
+    }
+
+    private void initEdgeToEdge() {
+        if (Build.VERSION.SDK_INT >= 21) {
+            ViewCompat.setOnApplyWindowInsetsListener(layout, ((v, insets) -> {
+                Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+
+                LinearLayout.LayoutParams layoutParams = (LinearLayout.LayoutParams) spacer_top.getLayoutParams();
+                layoutParams.height = systemBars.top;
+                spacer_top.setLayoutParams(layoutParams);
+
+                if (Build.VERSION.SDK_INT >= 28) {
+                    DisplayCutout displayCutout = Objects.requireNonNull(insets.toWindowInsets()).getDisplayCutout();
+                    if (displayCutout == null && Build.VERSION.SDK_INT >= 29)
+                        displayCutout = getWindowManager().getDefaultDisplay().getCutout();
+
+                    if (displayCutout != null) {
+                        layout.setPadding(Math.max(displayCutout.getSafeInsetLeft(), systemBars.left), 0,
+                                Math.max(displayCutout.getSafeInsetRight(), systemBars.right), 0);
+
+                        rv_digits.setPadding(0, 0, 0, Math.max(displayCutout.getSafeInsetBottom(), systemBars.bottom));
+                        return WindowInsetsCompat.CONSUMED;
+                    }
+                }
+
+                layout.setPadding(systemBars.left, 0, systemBars.right, 0);
+                rv_digits.setPadding(0, 0, 0, systemBars.bottom);
+                return WindowInsetsCompat.CONSUMED;
+            }));
+        }
+    }
+
+    private void enableEdgeToEdge() {
+        if (Build.VERSION.SDK_INT >= 35)
+            getWindow().setDecorFitsSystemWindows(false);
+        if (Build.VERSION.SDK_INT >= 21)
+            EdgeToEdge.enable(this);
     }
 
     private void initDrawables(int width, int height) {
@@ -139,17 +225,27 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     }
 
     private void initViewSizes() {
-        int width = layout.getWidth();
-        int rvHeight = rv_digits.getHeight();
+        int width = layout.getWidth() - layout.getPaddingLeft() - layout.getPaddingRight();
+        int rvHeight = rv_digits.getHeight() - rv_digits.getPaddingBottom();
 
         int rows = 5;
-        columns = 4;
 
-        itemWidth = width / columns;
         itemHeight = rvHeight / rows;
 
-        tv_expressions.setTextSize(TypedValue.COMPLEX_UNIT_PX, tv_expressions.getHeight() / 3f);
-        tv_result.setTextSize(TypedValue.COMPLEX_UNIT_PX, tv_result.getHeight() / 3f);
+        int columns;
+        if (width >= itemHeight * 8) {
+            columns = 8;
+            combinedLayoutStyle = true;
+        } else {
+            columns = 4;
+            combinedLayoutStyle = false;
+        }
+
+        itemWidth = width / columns;
+
+        int tvHeight = tv_expressions.getHeight();
+        tv_expressions.setTextSize(TypedValue.COMPLEX_UNIT_PX, tvHeight / 2.5f);
+        tv_result.setTextSize(TypedValue.COMPLEX_UNIT_PX,  tvHeight / 2.5f);
 
         if (initialized) {
             adapter.setItemSize(itemWidth, itemHeight);
@@ -158,33 +254,34 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
 
 
     private void initViews() {
-        layout = findViewById(R.id.layout_main);
+        layout = findViewById(R.id.main);
         tv_expressions = findViewById(R.id.tv_expressions);
         scroll_expressions = findViewById(R.id.scroll_expressions);
         tv_expressions.setText("", TextView.BufferType.EDITABLE);
         tv_result = findViewById(R.id.tv_result);
         scroll_result = findViewById(R.id.scroll_result);
         rv_digits = findViewById(R.id.rv_digits);
+        spacer_top = findViewById(R.id.spacer_top);
     }
 
     private void initDigits() {
+
         tv_result.setText("0");
         tv_result.setTextColor(Color.GRAY);
 
         scroll_expressions.setHorizontalScrollBarEnabled(false);
         scroll_result.setHorizontalScrollBarEnabled(false);
 
-        rv_digits.setLayoutManager(new GridLayoutManager(this, columns));
+        rv_digits.setLayoutManager(new GridLayoutManager(this, combinedLayoutStyle ? 8 : 4));
 
-        adapter = new DigitAdapter(itemWidth, itemHeight, normalItems);
+        adapter = new DigitAdapter(itemWidth, itemHeight, combinedLayoutStyle ? combinedItems : normalItems);
 
         adapter.setOnItemClickListener(this);
         adapter.setBackgrounds(digitalBackground, operatorBackground, specialBackground);
         rv_digits.setAdapter(adapter);
 
-        originalNumFormat.setMaximumFractionDigits(ACCURACY_LIMIT);
-        resultFormat.setGroupingUsed(true);
-        resultFormat.setMaximumFractionDigits(ACCURACY_LIMIT);
+        originNumFormat.setMaximumFractionDigits(17);
+        resultFormat.setMaximumFractionDigits(17);
         resultFormat.setRoundingMode(RoundingMode.HALF_UP);
 
         initialized = true;
@@ -292,7 +389,11 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         }
     }
 
+    //不会在combined布局使用
     private void performSwitchAdvancedPanel(boolean open) {
+        if (combinedLayoutStyle)
+            return;
+        this.isAdvancedOpen = open;
         if (open) {
             adapter.setItems(advancedItems);
             if (isRad)
@@ -306,16 +407,23 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
 
     private void performSwitchINV(boolean isINV) {
         this.isINV = isINV;
+        int[] indexes = combinedLayoutStyle ? functionIndexesCombined : functionIndexes;
         if (isINV) {
-            adapter.setItems(INVIndexes, INVItems);
+            adapter.setItems(indexes, INVItems);
         } else {
-            adapter.setItems(INVIndexes, advancedItems);
+            adapter.setItems(indexes, functionItems);
         }
     }
 
     private void performSwitchRad(boolean rad) {
-        adapter.setItem(4, rad ? RADItem : DEGItem);
         this.isRad = rad;
+
+        Item item = rad ? RADItem : DEGItem;
+        if (combinedLayoutStyle) {
+            adapter.setItem(8, item);
+        } else if (isAdvancedOpen) {
+            adapter.setItem(4, item);
+        }
     }
 
     private boolean appendFunction(CharSequence advanced) {
@@ -326,9 +434,9 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         text.append(advanced.toString());
 
         if (advanced instanceof SpannableString) {
-            //拼接时需要在新的位置设置新的Span
             SpannableString spannable = (SpannableString) advanced;
 
+            //拼接时需要在新的位置设置新的Span
             int appendedLength = text.length();
             int start = appendedLength - spannable.length() + spannable.getSpanStart(SUPERSCRIPT_SPAN);
             text.setSpan(new SuperscriptSpan(), start, appendedLength, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -419,33 +527,36 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         scroll_expressions.post(() -> scroll_expressions.fullScroll(View.FOCUS_RIGHT));
     }
 
-    private void performExpressionThousandSeparator(Editable text, String numberString) {
+    private void performExpressionThousandSeparator(Editable text, String currentNumberString) {
+        if (currentNumberString.contains("."))
+            return;
+
         //先将原有的整数部分全部删掉，再替换成千位分隔符格式
 
-        char delete;
-        char firstChar = numberString.charAt(0);
+        char check;
         int length = text.length();
-        while (true) {
-            if (length == 0)
-                break;
+        int deleteStart = length;
+        char firstChar = currentNumberString.charAt(0);
+
+        while (deleteStart > 0) {
 
             //正负号说明我们来到了数字的开头
-            delete = text.charAt(length - 1);
+            check = text.charAt(deleteStart - 1);
             if (firstChar == '+' || firstChar == '-') {
-                if (delete == firstChar) {
-                    text.delete(length - 1, length);
+                if (check == firstChar) {
+                    deleteStart--;
                     break;
                 }
             }
 
             //删掉数字
-            if (DIGIT_CHARS.contains(delete) || delete == ',') {
-                text.delete(length - 1, length);
-                length--;
+            if (DIGIT_CHARS.contains(check) || check == ',') {
+                deleteStart--;
             } else {
                 break;
             }
         }
+        text.delete(deleteStart, length);
 
         //把刚才的正号补回来,不然正号会被忽略
         if (firstChar == '+')
@@ -457,40 +568,100 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     }
 
     private void performCalculate() {
+        String resultTextDisplay = null;
+
         Double result = null;
         try {
             result = expressionBuilder.calculate(isRad);
-        } catch (ArithmeticException e) {
-            String message = e.getMessage();
-            if (message == null)
-                tv_result.setText(R.string.err);
-            else
-                tv_result.setText(Integer.parseInt(message));
-            tv_result.setTextColor(Color.RED);
+        } catch (Exception e) {
+            if (e instanceof EquationBuilder.CalculateException) {
+                try {
+                    resultTextDisplay = getString(((EquationBuilder.CalculateException) e).textResourceId);
+                } catch (Resources.NotFoundException ignored) {
+                }
+            }
+            if (resultTextDisplay == null) {
+                String message = e.getMessage();
+                if (message == null)
+                    resultTextDisplay = getString(R.string.err);
+                else
+                    resultTextDisplay = message;
+            }
         }
 
-        //超出精度限制则使用科学计数法。使用originalFormat关闭原有的科学计数法以免影响长度判断。
         if (result != null) {
-            String original = originalNumFormat.format(result);
-            if (original.equals("0")) {
-                if (result == 0)
-                    tv_result.setText(String.valueOf(0)); //int...
-                else
-                    tv_result.setText(String.valueOf(result)); //double
+            String origin = originNumFormat.format(result); //去除double自动添加的科学记数法
+
+            if (origin.equals("0") || origin.equals("-0")) {
+                resultTextDisplay = "0";
             } else {
-                int length = getStringNumLength(original);
-                if (original.contains("."))
-                    length--;
-
-                if (length > ACCURACY_LIMIT)
-                    tv_result.setText(String.valueOf(result));
-                else
-                    tv_result.setText(resultFormat.format(result));
+                String resultString = result.toString();
+                int dotIndex = resultString.indexOf("."), EIndex = resultString.indexOf("E");
+                if (dotIndex >= 0) {
+                    if (EIndex > dotIndex) {
+                        int fractionalLength = resultString.substring(dotIndex + 1, EIndex).length();
+                        int ELength = Integer.parseInt(resultString.substring(EIndex + 1));
+                        if (ELength <= -10 ||
+                                (ELength > fractionalLength && ELength >= 10)) {
+                            resultTextDisplay = resultString; //需要使用科学记数法
+                        }
+                    }
+                }
             }
+        }
 
+
+        if (resultTextDisplay == null)
+            resultTextDisplay = resultFormat.format(result);
+
+        tv_result.setText(resultTextDisplay);
+        if (result == null) {
+            tv_result.setTextColor(Color.RED);
+        } else {
             tv_result.setTextColor(Color.GRAY);
             scroll_result.post(() -> scroll_result.fullScroll(View.FOCUS_LEFT));
         }
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+
+        outState.putBoolean("isINV", isINV);
+        outState.putBoolean("isRad", isRad);
+        outState.putBoolean("isAdvancedOpen", isAdvancedOpen);
+
+        if (isFinalResult)
+            outState.putBoolean("isFinalResult", true);
+        else {
+            outState.putParcelable("expressionBuilder", expressionBuilder);
+            outState.putBoolean("isFinalResult", false);
+        }
+
+        outState.putCharSequence("displayedExpression", tv_expressions.getText());
+    }
+
+    //不是重写onRestoreInstanceState(Bundle)
+    protected void postRestoreInstanceState(Bundle savedInstanceState) {
+        if (savedInstanceState == null)
+            return;
+
+        if (savedInstanceState.getBoolean("isINV")) {
+            performSwitchINV(true);
+        }
+        if (savedInstanceState.getBoolean("isRad")) {
+            performSwitchRad(true);
+        }
+        if (!combinedLayoutStyle && savedInstanceState.getBoolean("isAdvancedOpen")) {
+            performSwitchAdvancedPanel(true);
+        }
+        if (savedInstanceState.getBoolean("isFinalResult")) {
+            isFinalResult = true;
+        } else {
+            expressionBuilder = (EquationBuilder) savedInstanceState.get("expressionBuilder");
+            performCalculate();
+        }
+        tv_expressions.setText(savedInstanceState.getCharSequence("displayedExpression"), TextView.BufferType.EDITABLE);
 
     }
 }
