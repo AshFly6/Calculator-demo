@@ -17,6 +17,8 @@ import static com.ashfly.android.calculator.demo.EquationBuilder.SEPARATE_CHARS;
 import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.graphics.Color;
+import android.graphics.Point;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
@@ -29,8 +31,12 @@ import android.text.Spanned;
 import android.text.style.RelativeSizeSpan;
 import android.text.style.SuperscriptSpan;
 import android.util.TypedValue;
+import android.view.Display;
 import android.view.DisplayCutout;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewTreeObserver;
+import android.view.WindowManager;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -53,9 +59,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * @noinspection UnusedReturnValue
- */
 public class MainActivity extends AppCompatActivity implements OnItemClickListener {
 
     private final NumberFormat resultFormat = NumberFormat.getNumberInstance();
@@ -142,43 +145,72 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         setContentView(R.layout.activity_main);
 
         initViews();
-        initEdgeToEdge();
-        layout.post(() -> {
-            initViewSizes();
-            initDrawables(itemWidth, itemHeight);
-            initDigits();
-            postRestoreInstanceState(savedInstanceState);
-        });
-    }
 
-    private void initEdgeToEdge() {
         if (Build.VERSION.SDK_INT >= 21) {
             ViewCompat.setOnApplyWindowInsetsListener(layout, ((v, insets) -> {
-                Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+                layout.post(() -> {
+                    initEdgeToEdge(insets);
 
-                LinearLayout.LayoutParams layoutParams = (LinearLayout.LayoutParams) spacer_top.getLayoutParams();
-                layoutParams.height = systemBars.top;
-                spacer_top.setLayoutParams(layoutParams);
+                    layout.post(()-> {
+                        initViewSizes();
+                        initDrawables(itemWidth, itemHeight);
+                        if (!initialized) {
+                            initDigits();
+                            postRestoreInstanceState(savedInstanceState);
+                        }
+                    });
+                });
+                return insets;
+            }));
+        } else {
+            layout.post(() -> {
+                initViewSizes();
+                initDrawables(itemWidth, itemHeight);
+                initDigits();
+                postRestoreInstanceState(savedInstanceState);
+            });
+        }
+    }
 
-                if (Build.VERSION.SDK_INT >= 28) {
-                    DisplayCutout displayCutout = Objects.requireNonNull(insets.toWindowInsets()).getDisplayCutout();
-                    if (displayCutout == null && Build.VERSION.SDK_INT >= 29)
-                        displayCutout = getWindowManager().getDefaultDisplay().getCutout();
+    private void initEdgeToEdge(WindowInsetsCompat insets) {
+        Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
 
-                    if (displayCutout != null) {
-                        layout.setPadding(Math.max(displayCutout.getSafeInsetLeft(), systemBars.left), 0,
-                                Math.max(displayCutout.getSafeInsetRight(), systemBars.right), 0);
+        Insets inset = systemBars;
+        if (Build.VERSION.SDK_INT >= 28) {
+            Insets displayCutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout());
 
-                        rv_digits.setPadding(0, 0, 0, Math.max(displayCutout.getSafeInsetBottom(), systemBars.bottom));
-                        return WindowInsetsCompat.CONSUMED;
-                    }
+            if (displayCutout.equals(Insets.NONE) && Build.VERSION.SDK_INT >= 29) {
+                Display display = getWindowManager().getDefaultDisplay();
+                DisplayCutout cutout = display.getCutout();
+
+
+                if (cutout != null) {
+
+                    int[] position = new int[2];
+                    layout.getLocationOnScreen(position);
+                    Rect layoutRect = new Rect(position[0], position[1],
+                            position[0] + layout.getWidth(), position[1] + layout.getHeight());
+
+                    Point point = new Point();
+                    display.getRealSize(point);
+                    displayCutout = Insets.of(
+                            Math.max(0, cutout.getSafeInsetLeft() - layoutRect.left),
+                            Math.max(0, cutout.getSafeInsetTop() - layoutRect.top),
+                            Math.max(0, cutout.getSafeInsetRight() - (point.x - layoutRect.right)),
+                            Math.max(0, cutout.getSafeInsetBottom() - (point.y - layoutRect.bottom))
+                    );
                 }
 
-                layout.setPadding(systemBars.left, 0, systemBars.right, 0);
-                rv_digits.setPadding(0, 0, 0, systemBars.bottom);
-                return WindowInsetsCompat.CONSUMED;
-            }));
+            }
+
+            inset = Insets.max(systemBars, displayCutout);
         }
+        LinearLayout.LayoutParams layoutParams = (LinearLayout.LayoutParams) spacer_top.getLayoutParams();
+        layoutParams.height = inset.top;
+        spacer_top.setLayoutParams(layoutParams);
+
+        layout.setPadding(inset.left, 0, inset.right, 0);
+        rv_digits.setPadding(0, 0, 0, inset.bottom);
     }
 
     private void enableEdgeToEdge() {
@@ -186,6 +218,16 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             getWindow().setDecorFitsSystemWindows(false);
         if (Build.VERSION.SDK_INT >= 21)
             EdgeToEdge.enable(this);
+
+        if (Build.VERSION.SDK_INT >= 29)
+            getWindow().setNavigationBarContrastEnforced(false);
+        else if (Build.VERSION.SDK_INT >= 21)
+            getWindow().setNavigationBarColor(Color.TRANSPARENT);
+
+        if (Build.VERSION.SDK_INT >= 30)
+            getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+        else if (Build.VERSION.SDK_INT >= 28)
+            getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
     }
 
     private void initDrawables(int width, int height) {
@@ -245,7 +287,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
 
         int tvHeight = tv_expressions.getHeight();
         tv_expressions.setTextSize(TypedValue.COMPLEX_UNIT_PX, tvHeight / 2.5f);
-        tv_result.setTextSize(TypedValue.COMPLEX_UNIT_PX,  tvHeight / 2.5f);
+        tv_result.setTextSize(TypedValue.COMPLEX_UNIT_PX, tvHeight / 2.5f);
 
         if (initialized) {
             adapter.setItemSize(itemWidth, itemHeight);
@@ -280,10 +322,11 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         adapter.setBackgrounds(digitalBackground, operatorBackground, specialBackground);
         rv_digits.setAdapter(adapter);
 
-        originNumFormat.setMaximumFractionDigits(17);
-        resultFormat.setMaximumFractionDigits(17);
+        //默认启用千分位分隔符
+        originNumFormat.setMaximumFractionDigits(14);
+        originNumFormat.setRoundingMode(RoundingMode.HALF_UP);
+        resultFormat.setMaximumFractionDigits(14);
         resultFormat.setRoundingMode(RoundingMode.HALF_UP);
-
         initialized = true;
     }
 
@@ -366,6 +409,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
                 }
                 if (operator.equals("INV")) {
                     performSwitchINV(!isINV);
+                    break;
                 }
 
                 if (isFinalResult)
@@ -386,6 +430,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
                     performCalculate();
                     break;
                 }
+                break;
         }
     }
 
@@ -622,6 +667,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             scroll_result.post(() -> scroll_result.fullScroll(View.FOCUS_LEFT));
         }
     }
+
 
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {

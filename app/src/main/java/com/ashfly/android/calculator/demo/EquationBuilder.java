@@ -5,13 +5,13 @@ import android.os.Parcelable;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.core.util.Supplier;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 /**
- * @noinspection BooleanMethodIsAlwaysInverted
  * 构造和计算算式
  */
 public class EquationBuilder implements Parcelable {
@@ -22,12 +22,10 @@ public class EquationBuilder implements Parcelable {
     public static final List<Character> ADVANCED_OPERATORS = Arrays.asList('!', '%');
 
     public static final List<Character> SEPARATE_CHARS = Arrays.asList('(', ')', 'e', 'π'); //这些字符总会独占一个位置
-    public static final List<String> MATH_FUNCTIONS = Arrays.asList("sin", "cos", "tan", "ln", "lg", "exp", "sin-1", "cos-1", "tan-1", "√");
+    public static final List<String> MATH_FUNCTIONS = Arrays.asList("sin-1", "cos-1", "tan-1", "sin", "cos", "tan", "ln", "lg", "exp", "√");
 
     public static final char EMPTY_CHAR = '\u0000';
     public static final String TAG = "ExpressionBuilder";
-    public static final double EPSILON = 1e-10;
-    public static final int MAX_DIGIT_LENGTH = 15;
 
     public static final Creator<EquationBuilder> CREATOR = new Creator<EquationBuilder>() {
         @Override
@@ -122,22 +120,26 @@ public class EquationBuilder implements Parcelable {
         if (c == '√')
             return appendLeadingFunction(String.valueOf(c));
 
+
+        boolean needNewBuilder = false;
         if (builder.length() == 1) {
             char firstChar = builder.charAt(0);
             if (firstChar == '√' || ADVANCED_OPERATORS.contains(firstChar) || SEPARATE_CHARS.contains(firstChar))
-                builder = createNewBuilder(EMPTY_CHAR);
+                needNewBuilder = true;
         }
 
-        int length = builder.length();
-        if (length > 1 && (builder.charAt(0) == '+' || builder.charAt(0) == '-'))
-            length--;
-        if (length >= MAX_DIGIT_LENGTH)
-            return false;
+        if (!needNewBuilder) {
+            int length = builder.length();
+            if (length > 1 && (builder.charAt(0) == '+' || builder.charAt(0) == '-'))
+                length--;
+            if (length >= 15)
+                return false;
+        }
 
         if (DIGIT_CHARS.contains(c))
-            return appendDigitChar(c, builder);
+            return appendDigitChar(c, needNewBuilder ? createNewBuilder(EMPTY_CHAR) : builder);
         if (c == '.')
-            return appendDot(c, builder);
+            return appendDot(c, needNewBuilder ? createNewBuilder(EMPTY_CHAR) : builder);
 
         Log.d(TAG, toString());
         return false;
@@ -302,7 +304,6 @@ public class EquationBuilder implements Parcelable {
         return false;
     }
 
-
     private void splitNegative(StringBuilder builder) {
         String s = builder.toString().replace("-", "");
         builder.delete(1, builder.length());
@@ -453,8 +454,6 @@ public class EquationBuilder implements Parcelable {
                     if (!MATH_FUNCTIONS.contains(previousNum))
                         throw new CalculateException(String.format("Cannot calculate %s%s", previousNum, thisNum), R.string.formate_wrong);
 
-                    scopeEnd--;
-
                     if (previousNum.contains("-1")) {
                         if (thisNum > 1 || thisNum < -1)
                             throw new CalculateException(String.format("Cannot calculate \"%s%f!\"", previousNum, thisNum), R.string.beyond_define_domain);
@@ -513,7 +512,7 @@ public class EquationBuilder implements Parcelable {
                             case "tan":
                                 if (!isRad)
                                     thisNum = Math.toRadians(thisNum);
-                                if (Math.abs(Math.cos(thisNum)) < EPSILON)
+                                if (Math.abs(Math.cos(thisNum)) < 1e-10)
                                     throw new CalculateException(String.format("Cannot calculate \"%s%f!\"", previousNum, thisNum), R.string.beyond_define_domain);
 
                                 thisNum = Math.tan(thisNum);
@@ -530,10 +529,13 @@ public class EquationBuilder implements Parcelable {
                     numbers.set(globalIndex - 1, String.valueOf(thisNum));
                     numbers.remove(globalIndex);
                     operators.remove(globalIndex - 1);
+
+                    scopeEnd--;
                 }
             }
 
 
+            //将数字和操作符添加进scope，同时处理%和!
             for (int globalIndex = scopeStart; globalIndex <= scopeEnd; globalIndex++) {
                 String number = numbers.get(globalIndex);
                 int scopeIndex = globalIndex - scopeStart;
@@ -768,6 +770,127 @@ public class EquationBuilder implements Parcelable {
         dest.writeStringList(list);
         dest.writeInt(index);
         dest.writeInt(unmatchedLeftBracket);
+    }
+
+    public static final class Parser {
+
+        public static EquationBuilder parseEquation(String equation) {
+            equation = equation.replace("/", "÷").replace('−', '-')
+                    .replace('＋', '+').replace(" ", "");
+
+            char[] chars = equation.toCharArray();
+            EquationBuilder equationBuilder = new EquationBuilder();
+
+            for (int index = 0, charsLength = chars.length; index < charsLength; ) {
+                int _index = index;
+                char c = chars[index];
+
+                index += tryAppendSomeOperators(equationBuilder, new char[]{'x', '*', '×'}, () -> equationBuilder.appendChar('×'), c);
+                if (index != _index)
+                    continue;
+
+                index += tryAppendSomeOperators(equationBuilder, new char[]{'(', ')'}, () -> equationBuilder.appendBracket() == c, c);
+                if (index != _index)
+                    continue;
+
+                if (c != 'e' && equationBuilder.appendChar(c)) {
+                    index += 1;
+                    continue;
+                }
+
+                StringBuilder builder = new StringBuilder();
+
+                //arccos(
+                int lastIndex = Math.min(chars.length - 1, index + 7);
+                for (int i = index; i <= lastIndex; i++) {
+                    builder.append(chars[i]);
+                }
+                String followup = builder.toString();
+
+                int length = followup.length();
+
+                if (followup.startsWith("E") || (
+                        followup.startsWith("e") && length >= 2 && DIGIT_CHARS.contains(followup.charAt(1)))) {
+
+                    if (equationBuilder.appendChar('×')) {
+                        equationBuilder.appendChar('1');
+                        equationBuilder.appendChar('0');
+                        equationBuilder.appendChar('^');
+                    } else if (!equationBuilder.appendChar('e')) {
+                        return null;
+                    }
+                    index += 1;
+                    continue;
+                }
+
+                index += tryAppendLeadingFunction(equationBuilder, new String[]{"sin-1(", "arcsin(", "asin("}, "sin-1", followup);
+                if (index != _index)
+                    continue;
+
+                index += tryAppendLeadingFunction(equationBuilder, new String[]{"cos-1(", "arccos(", "acos("}, "cos-1", followup);
+                if (index != _index)
+                    continue;
+
+                index += tryAppendLeadingFunction(equationBuilder, new String[]{"tan-1(", "arctan(", "atan("}, "tan-1", followup);
+                if (index != _index)
+                    continue;
+
+                index += tryAppendLeadingFunction(equationBuilder, new String[]{"sin(", "cos(", "tan(", "exp("}, 3, followup);
+                if (index != _index)
+                    continue;
+
+                index += tryAppendLeadingFunction(equationBuilder, new String[]{"lg(", "ln("}, 2, followup);
+                if (index != _index)
+                    continue;
+
+                index += tryAppendLeadingFunction(equationBuilder, new String[]{"log("}, "lg", followup);
+                if (index != _index)
+                    continue;
+
+                index += tryAppendLeadingFunction(equationBuilder, new String[]{"sqrt(", "√"}, "√", followup);
+                if (index != _index)
+                    continue;
+
+                if (c == 'e' && equationBuilder.appendChar(c)) {
+                    index += 1;
+                    continue;
+                }
+
+                return null;
+            }
+            return equationBuilder;
+
+        }
+
+        private static int tryAppendSomeOperators(EquationBuilder builder, char[] chars, Supplier<Boolean> appender, char tryChar) {
+            for (char c : chars) {
+                if (c == tryChar && appender.get())
+                    return 1;
+            }
+            return 0;
+        }
+
+        private static int tryAppendLeadingFunction(EquationBuilder builder, String[] functionGroups,
+                                                    String function, String tryFunctionString) {
+            for (String f : functionGroups) {
+                if (tryFunctionString.startsWith(f)) {
+                    builder.appendLeadingFunction(function);
+                    return f.length();
+                }
+            }
+            return 0;
+        }
+
+        private static int tryAppendLeadingFunction(EquationBuilder builder, String[] functionGroups,
+                                                    int length, String tryFunctionString) {
+            for (String f : functionGroups) {
+                if (tryFunctionString.startsWith(f)) {
+                    builder.appendLeadingFunction(tryFunctionString.substring(0, length));
+                    return f.length();
+                }
+            }
+            return 0;
+        }
     }
 
     public static final class CalculateException extends ArithmeticException {

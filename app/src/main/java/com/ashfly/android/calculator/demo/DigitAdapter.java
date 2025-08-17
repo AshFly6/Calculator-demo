@@ -35,13 +35,13 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
     public static final RelativeSizeSpan RELATIVE_SIZE_SPAN = new RelativeSizeSpan(0.5f);
 
     private final List<Item> list = new ArrayList<>();
-    private int width, height;
+    private int itemWidth, itemHeight;
     private OnItemClickListener onItemClickListener;
     private Drawable[] backgrounds;
 
-    public DigitAdapter(int width, int height, List<Item> list) {
-        this.width = width;
-        this.height = height;
+    public DigitAdapter(int itemWidth, int itemHeight, List<Item> list) {
+        this.itemWidth = itemWidth;
+        this.itemHeight = itemHeight;
         this.list.addAll(list);
     }
 
@@ -56,16 +56,17 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
     }
 
     public void setItemSize(int width, int height) {
-        if (this.width == width && this.height == height)
+        if (this.itemWidth == width && this.itemHeight == height)
             return;
-        this.width = width;
-        this.height = height;
-        setItems(list);
+        this.itemWidth = width;
+        this.itemHeight = height;
+        setItems(new ArrayList<>(list));
     }
 
     @SuppressLint("NotifyDataSetChanged")
     public void setItems(List<Item> list) {
         this.list.clear();
+        notifyDataSetChanged();
         this.list.addAll(list);
         notifyDataSetChanged();
     }
@@ -112,7 +113,7 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
     @NonNull
     @Override
     public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        return VH.newVH(parent.getContext(), width, height, viewType, backgrounds);
+        return VH.newVH(parent.getContext(), itemWidth, itemHeight, viewType, backgrounds);
     }
 
     @Override
@@ -214,21 +215,22 @@ public class DigitAdapter extends RecyclerView.Adapter<DigitAdapter.VH> {
         }
 
         //Drawable[] digitalBackground, operatorBackground, specialBackground
-        public static VH newVH(Context context, int width, int height, int viewType, Drawable[] backgrounds) {
+        public static VH newVH(Context context, int itemWidth, int itemHeight, int viewType, Drawable[] backgrounds) {
             Objects.requireNonNull(context);
             if (backgrounds == null || backgrounds.length != 3)
                 throw new IllegalArgumentException("invalid backgrounds[]");
 
-            int horizontalMargin = width / 10;
-            int contentWidth = width - horizontalMargin * 2;
+            int horizontalMargin = itemWidth / 10;
+            int contentWidth = itemWidth - horizontalMargin * 2;
 
             int contentHeight, verticalMargin;
-            if (height > contentWidth) {
+            if (itemHeight > contentWidth) {
+                //noinspection SuspiciousNameCombination 正方形
                 contentHeight = contentWidth;
-                verticalMargin = (height - contentHeight) / 2;
+                verticalMargin = (itemHeight - contentHeight) / 2;
             } else {
-                verticalMargin = height / 10;
-                contentHeight = height - verticalMargin * 2;
+                verticalMargin = itemHeight / 10;
+                contentHeight = itemHeight - verticalMargin * 2;
             }
 
 
