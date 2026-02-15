@@ -15,6 +15,7 @@ import static com.ashfly.android.calculator.demo.EquationBuilder.EMPTY_CHAR;
 import static com.ashfly.android.calculator.demo.EquationBuilder.SEPARATE_CHARS;
 
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.Point;
@@ -30,16 +31,16 @@ import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.RelativeSizeSpan;
 import android.text.style.SuperscriptSpan;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.DisplayCutout;
-import android.view.KeyEvent;
 import android.view.View;
-import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
@@ -64,11 +65,12 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     private final NumberFormat resultFormat = NumberFormat.getNumberInstance();
     private final NumberFormat originNumFormat = new DecimalFormat("###0");
     private final NumberFormat expressionFormat = NumberFormat.getNumberInstance();
+
     private final List<Item> normalItems = Arrays.asList(
             new Item(R.drawable.ic_expand_more), new Item(R.drawable.ic_backspace), new Item("%"), new Item("÷"),
             new Item('7'), new Item('8'), new Item('9'), new Item("×"),
             new Item('4'), new Item('5'), new Item('6'), new Item("-"),
-            new Item('3'), new Item('2'), new Item('1'), new Item("+"),
+            new Item('1'), new Item('2'), new Item('3'), new Item("+"),
             new Item('0'), new Item('.'), new Item("( )"), new Item("="));
     private final Item RADItem = new Item("RAD"), DEGItem = new Item("DEG");
     private final List<Item> advancedItems = Arrays.asList(
@@ -79,22 +81,27 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     private final List<Item> INVItems = Arrays.asList(
             Item.newPowItem("sin", "-1"), Item.newPowItem("cos", "-1"), Item.newPowItem("tan", "-1"),
             Item.newPowItem("e", "x"), Item.newPowItem("10", "x"), Item.newPowItem("x", "2"));
+
     private final List<Item> combinedItems, functionItems;
     private final int[] functionIndexes = new int[]{5, 6, 7, 10, 11, 12}; //因为布局是固定的，所以提前定义好索引，避免动态查询
     private final int[] functionIndexesCombined = new int[]{9, 10, 11, 18, 19, 24};
+
     private EquationBuilder expressionBuilder = new EquationBuilder();
+
     private Drawable digitalBackground, operatorBackground, specialBackground;
+
     private LinearLayout layout;
     private HorizontalScrollView scroll_expressions, scroll_result;
     private TextView tv_expressions, tv_result;
-    private RecyclerView rv_digits;
-    private boolean isRad, isFinalResult, isINV;
-    private DigitAdapter adapter;
-    private int itemWidth, itemHeight;
-    private boolean combinedLayoutStyle;
-    private boolean initialized;
-    private boolean isAdvancedOpen;
     private View spacer_top;
+    private RecyclerView rv_digits;
+    private DigitAdapter adapter;
+
+    private boolean isRad, isFinalResult, isINV;
+    private int itemWidth, itemHeight;
+    private boolean combinedLayoutStyle, isAdvancedOpen;
+
+    private boolean restoredInstance;
 
     public MainActivity() {
         combinedItems = new ArrayList<>();
@@ -144,74 +151,38 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         enableEdgeToEdge();
         setContentView(R.layout.activity_main);
 
+        Log.d("MainActivity", "onCreate()");
+
         initViews();
+        initEdgeToEdge();
 
-        if (Build.VERSION.SDK_INT >= 21) {
-            ViewCompat.setOnApplyWindowInsetsListener(layout, ((v, insets) -> {
-                layout.post(() -> {
-                    initEdgeToEdge(insets);
+        layout.post(() -> {
+            initViewSizes();
+            initDrawables(itemWidth, itemHeight);
+            initDigits();
+            restoreInstanceState(savedInstanceState);
+        });
 
-                    layout.post(()-> {
-                        initViewSizes();
-                        initDrawables(itemWidth, itemHeight);
-                        if (!initialized) {
-                            initDigits();
-                            postRestoreInstanceState(savedInstanceState);
-                        }
-                    });
-                });
-                return insets;
-            }));
-        } else {
-            layout.post(() -> {
-                initViewSizes();
-                initDrawables(itemWidth, itemHeight);
-                initDigits();
-                postRestoreInstanceState(savedInstanceState);
-            });
-        }
     }
 
-    private void initEdgeToEdge(WindowInsetsCompat insets) {
-        Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-
-        Insets inset = systemBars;
-        if (Build.VERSION.SDK_INT >= 28) {
+    private void initEdgeToEdge() {
+        ViewCompat.setOnApplyWindowInsetsListener(layout, (v, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             Insets displayCutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout());
+            Insets max = Insets.max(systemBars, displayCutout);
 
-            if (displayCutout.equals(Insets.NONE) && Build.VERSION.SDK_INT >= 29) {
-                Display display = getWindowManager().getDefaultDisplay();
-                DisplayCutout cutout = display.getCutout();
+            layout.setPadding(max.left, 0, max.right, 0);
+            rv_digits.setPadding(0, 0, 0, max.bottom);
 
+            LinearLayout.LayoutParams layoutParams = (LinearLayout.LayoutParams) spacer_top.getLayoutParams();
+            layoutParams.height = max.top;
+            spacer_top.setLayoutParams(layoutParams);
 
-                if (cutout != null) {
+            return WindowInsetsCompat.CONSUMED;
+        });
 
-                    int[] position = new int[2];
-                    layout.getLocationOnScreen(position);
-                    Rect layoutRect = new Rect(position[0], position[1],
-                            position[0] + layout.getWidth(), position[1] + layout.getHeight());
-
-                    Point point = new Point();
-                    display.getRealSize(point);
-                    displayCutout = Insets.of(
-                            Math.max(0, cutout.getSafeInsetLeft() - layoutRect.left),
-                            Math.max(0, cutout.getSafeInsetTop() - layoutRect.top),
-                            Math.max(0, cutout.getSafeInsetRight() - (point.x - layoutRect.right)),
-                            Math.max(0, cutout.getSafeInsetBottom() - (point.y - layoutRect.bottom))
-                    );
-                }
-
-            }
-
-            inset = Insets.max(systemBars, displayCutout);
-        }
-        LinearLayout.LayoutParams layoutParams = (LinearLayout.LayoutParams) spacer_top.getLayoutParams();
-        layoutParams.height = inset.top;
-        spacer_top.setLayoutParams(layoutParams);
-
-        layout.setPadding(inset.left, 0, inset.right, 0);
-        rv_digits.setPadding(0, 0, 0, inset.bottom);
     }
+
 
     private void enableEdgeToEdge() {
         if (Build.VERSION.SDK_INT >= 35)
@@ -264,6 +235,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             specialBackground = stateListDrawable.getConstantState().newDrawable().mutate();
             ((StateListDrawable) specialBackground).addState(new int[0], special);
         }
+
     }
 
     private void initViewSizes() {
@@ -278,6 +250,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         if (width >= itemHeight * 8) {
             columns = 8;
             combinedLayoutStyle = true;
+
         } else {
             columns = 4;
             combinedLayoutStyle = false;
@@ -288,10 +261,6 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         int tvHeight = tv_expressions.getHeight();
         tv_expressions.setTextSize(TypedValue.COMPLEX_UNIT_PX, tvHeight / 2.5f);
         tv_result.setTextSize(TypedValue.COMPLEX_UNIT_PX, tvHeight / 2.5f);
-
-        if (initialized) {
-            adapter.setItemSize(itemWidth, itemHeight);
-        }
     }
 
 
@@ -307,9 +276,10 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     }
 
     private void initDigits() {
-
-        tv_result.setText("0");
-        tv_result.setTextColor(Color.GRAY);
+        if (!restoredInstance) {
+            tv_result.setText("0");
+            tv_result.setTextColor(Color.GRAY);
+        }
 
         scroll_expressions.setHorizontalScrollBarEnabled(false);
         scroll_result.setHorizontalScrollBarEnabled(false);
@@ -327,7 +297,6 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
         originNumFormat.setRoundingMode(RoundingMode.HALF_UP);
         resultFormat.setMaximumFractionDigits(14);
         resultFormat.setRoundingMode(RoundingMode.HALF_UP);
-        initialized = true;
     }
 
     @Override
@@ -688,7 +657,9 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
     }
 
     //不是重写onRestoreInstanceState(Bundle)
-    protected void postRestoreInstanceState(Bundle savedInstanceState) {
+    protected void restoreInstanceState(Bundle savedInstanceState) {
+        if (restoredInstance)
+            return;
         if (savedInstanceState == null)
             return;
 
@@ -708,6 +679,7 @@ public class MainActivity extends AppCompatActivity implements OnItemClickListen
             performCalculate();
         }
         tv_expressions.setText(savedInstanceState.getCharSequence("displayedExpression"), TextView.BufferType.EDITABLE);
-
+        restoredInstance = true;
     }
+
 }
